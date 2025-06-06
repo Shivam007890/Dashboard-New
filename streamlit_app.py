@@ -5,10 +5,10 @@ from google.oauth2.service_account import Credentials
 import plotly.express as px
 from io import BytesIO
 from fpdf import FPDF
+import json
 
 # --- CONFIG ---
 SHEET_NAME = "Kerala Weekly Survey Automation Dashboard Test Run"
-SERVICE_ACCOUNT_JSON = r"C:\\Users\\tiwar\\Downloads\\hazel-core-461911-t7-6f99c3b18f4d.json"
 
 # ----------------- USER AUTH SECTION -----------------
 USERS = {
@@ -74,7 +74,10 @@ def get_gspread_client():
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
-    credentials = Credentials.from_service_account_file(SERVICE_ACCOUNT_JSON, scopes=scopes)
+    # Load service account info from Streamlit secrets
+    credentials = Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"], scopes=scopes
+    )
     gc = gspread.authorize(credentials)
     return gc
 
