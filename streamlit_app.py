@@ -5,10 +5,12 @@ from google.oauth2.service_account import Credentials
 import plotly.express as px
 from io import BytesIO
 from fpdf import FPDF
+import os
+import json
+import tempfile
 
 # --- CONFIG ---
 SHEET_NAME = "Kerala Weekly Survey Automation Dashboard Test Run"
-SERVICE_ACCOUNT_JSON = r"C:\\Users\\tiwar\\Downloads\\hazel-core-461911-t7-6f99c3b18f4d.json"
 
 # ----------------- USER AUTH SECTION -----------------
 USERS = {
@@ -70,12 +72,19 @@ def make_columns_unique(df):
 
 @st.cache_resource
 def get_gspread_client():
+    # Read credentials from Streamlit secrets/environment variable
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
-    credentials = Credentials.from_service_account_file(SERVICE_ACCOUNT_JSON, scopes=scopes)
+    credentials_json = os.getenv("GOOGLE_CREDENTIALS_JSON") or st.secrets["GOOGLE_CREDENTIALS_JSON"]
+    credentials_dict = json.loads(credentials_json)
+    with tempfile.NamedTemporaryFile(mode='w+', suffix='.json', delete=False) as temp_file:
+        json.dump(credentials_dict, temp_file)
+        temp_file_path = temp_file.name
+    credentials = Credentials.from_service_account_file(temp_file_path, scopes=scopes)
     gc = gspread.authorize(credentials)
+    os.unlink(temp_file_path)
     return gc
 
 @st.cache_data
@@ -250,7 +259,6 @@ def dataframe_to_pdf(df, title):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", "B", 14)
-    # Smart word-wrap for title
     if len(title) > 60:
         title_lines = [title[i:i+60] for i in range(0, len(title), 60)]
         for tline in title_lines:
@@ -261,11 +269,9 @@ def dataframe_to_pdf(df, title):
     pdf.ln(4)
     col_widths = calc_col_widths(df, pdf)
     row_height = pdf.font_size * 1.7
-    # Header
     for col, w in zip(df.columns, col_widths):
         pdf.cell(w, row_height, str(col), border=1, align='C')
     pdf.ln(row_height)
-    # Rows
     pdf.set_font("Arial", "", 10)
     for _, row in df.iterrows():
         for col, w in zip(df.columns, col_widths):
@@ -322,12 +328,10 @@ df = extract_block_df(data, block)
 question = selected_cut
 
 st.subheader(f"Data Table (Logged in as: {st.session_state['username']})")
-# Centrally aligned table using pandas Styler and st.table
 st.table(df.style.set_properties(**{'text-align': 'center'}).set_table_styles(
     [{'selector': 'th', 'props': [('text-align', 'center')]}]
 ))
 
-# Download Buttons
 csv = df.to_csv(index=False).encode('utf-8')
 st.download_button("Download CSV", csv, f"{selected_cut}_{pivot_sheet}.csv", "text/csv")
 pdf_file = dataframe_to_pdf(df, f"{selected_cut} ({pivot_sheet})")
