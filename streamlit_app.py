@@ -163,7 +163,7 @@ def get_value_columns(df):
                 cols.append(col)
     return cols
 
-def auto_analyze_and_plot(df, question=None):
+def auto_analyze_and_plot(df, question=None, pie_key=None):
     df = df.replace(['', None, 'nan', 'NaN'], pd.NA)
     df = df.dropna(axis=1, how='all').dropna(axis=0, how='all')
     st.write(f"**Question:** {question or ''}")
@@ -217,7 +217,9 @@ def auto_analyze_and_plot(df, question=None):
         fig2.update_layout(template="seaborn")
         st.plotly_chart(fig2, use_container_width=True)
         row_options = plot_df[category_col].tolist()
-        row_option = st.selectbox("Show distribution for (Pie View)", row_options, key="pieview")
+        # --- FIX: Use a unique key for each selectbox instance
+        unique_key = pie_key or f"pieview_{str(question)[:20].replace(' ','_')}"
+        row_option = st.selectbox("Show distribution for (Pie View)", row_options, key=unique_key)
         pie_row = plot_df[plot_df[category_col] == row_option][value_cols].iloc[0]
         st.markdown(f"### Distribution for {row_option}")
         fig3 = px.pie(
@@ -292,7 +294,6 @@ try:
     gc = get_gspread_client()
     all_sheets = [ws.title for ws in gc.open(SHEET_NAME).worksheets()]
     comparative_sheets = [title for title in all_sheets if is_comparative_sheet(title)]
-    # Pivot tabs for each month/question: e.g. "May_Which_party_did_you_vote_for"
     pivot_months = sorted(list(set(tab.split('_')[0] for tab in all_sheets if "_" in tab and not is_comparative_sheet(tab))))
 except Exception as e:
     st.error(f"Could not connect to Google Sheet: {e}")
@@ -305,7 +306,6 @@ if not comparative_sheets:
 # ---- 1. Show Comparative Analysis (Overall) At Top ----
 st.header("Comparative Analysis (Overall)")
 comp_overall_sheet = None
-# Prefer the one with only "Overall" or first comparative
 for cs in comparative_sheets:
     comp_overall_sheet = cs
     break
@@ -327,7 +327,7 @@ if comp_overall_sheet:
         st.table(df.style.set_properties(**{'text-align': 'center'}).set_table_styles(
             [{'selector': 'th', 'props': [('text-align', 'center')]}]
         ))
-        auto_analyze_and_plot(df, overall_block["label"])
+        auto_analyze_and_plot(df, overall_block["label"], pie_key="pie_overall")
     else:
         st.info("No 'Overall' cut found in comparative analysis sheet.")
 
@@ -338,7 +338,7 @@ with tab1:
     if not pivot_months:
         st.warning("No monthly survey sheets found.")
         st.stop()
-    selected_month = st.selectbox("Select Month to Deep Dive", pivot_months)
+    selected_month = st.selectbox("Select Month to Deep Dive", pivot_months, key="month_select")
 
 # ---- 3. Show All Pivot Tables for Selected Month ----
 with tab2:
@@ -347,11 +347,11 @@ with tab2:
         st.warning(f"No pivot tables found for {selected_month}.")
     else:
         st.header(f"Pivot Tables for {selected_month}")
-        pivot_tab = st.selectbox("Select Pivot Table (Question)", matching_pivot_tabs)
+        pivot_tab = st.selectbox("Select Pivot Table (Question)", matching_pivot_tabs, key="pivot_tab")
         pivot_data = load_pivot_data(gc, SHEET_NAME, pivot_tab)
         blocks = find_cuts_and_blocks(pivot_data)
         cut_labels = [b["label"] for b in blocks]
-        selected_cut = st.selectbox("Select a Cut/Crosstab", cut_labels)
+        selected_cut = st.selectbox("Select a Cut/Crosstab", cut_labels, key=f"cut_{pivot_tab}")
         block = next(b for b in blocks if b["label"] == selected_cut)
         df = extract_block_df(pivot_data, block)
         st.subheader(f"Data Table (Logged in as: {st.session_state['username']})")
@@ -362,4 +362,4 @@ with tab2:
         st.download_button("Download CSV", csv, f"{selected_cut}_{pivot_tab}.csv", "text/csv")
         pdf_file = dataframe_to_pdf(df, f"{selected_cut} ({pivot_tab})")
         st.download_button("Download PDF", pdf_file, f"{selected_cut}_{pivot_tab}.pdf", "application/pdf")
-        auto_analyze_and_plot(df, selected_cut)
+        auto_analyze_and_plot(df, selected_cut, pie_key=f"pie_{pivot_tab}_{selected_cut}")
