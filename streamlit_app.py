@@ -12,13 +12,13 @@ import tempfile
 # --- CONFIG ---
 SHEET_NAME = "Kerala Weekly Survey Automation Dashboard Test Run"
 
-# ----------------- USER AUTH SECTION -----------------
 USERS = {
     "admin": "adminpass",
     "shivam": "shivampass",
     "analyst": "analyst2024"
 }
 
+# ---- AUTH SECTION ----
 def login_form():
     st.markdown("<h2 style='text-align: center;'>Login</h2>", unsafe_allow_html=True)
     with st.form("Login", clear_on_submit=False):
@@ -119,28 +119,6 @@ def find_cuts_and_blocks(data):
                 })
     return blocks
 
-def find_difference_block(data):
-    # Returns first block where label starts with "Difference ("
-    for i, row in enumerate(data):
-        col1 = row[0] if len(row) > 0 else ""
-        if str(col1).strip().lower().startswith("difference ("):
-            header_row = i - 1
-            j = i + 1
-            while j < len(data):
-                rowj = data[j]
-                col1j = rowj[0] if len(rowj) > 0 else ""
-                if (str(col1j).strip() and not str(rowj[1]).strip()) or not any(str(cell).strip() for cell in rowj):
-                    break
-                j += 1
-            return {
-                "label": str(col1).strip(),
-                "start": i,
-                "header": header_row,
-                "data_start": i,
-                "data_end": j
-            }
-    return None
-
 def extract_block_df(data, block):
     try:
         header = data[block["header"]]
@@ -160,9 +138,6 @@ def extract_block_df(data, block):
     except Exception as err:
         st.warning(f"Could not parse block as table: {err}")
         return pd.DataFrame()
-
-def extract_difference_df(data, block):
-    return extract_block_df(data, block)
 
 def is_numeric_column(series):
     try:
@@ -264,21 +239,6 @@ def auto_analyze_and_plot(df, question=None):
     else:
         st.info("No valid numeric survey data to plot.")
 
-def calc_col_widths(df, pdf, min_col_width=28, max_col_width=60):
-    pdf.set_font("Arial", "B", 10)
-    col_widths = []
-    for col in df.columns:
-        header_width = pdf.get_string_width(str(col)) + 6
-        max_data_width = max([pdf.get_string_width(str(val)) + 6 for val in df[col]], default=header_width)
-        col_w = max(header_width, max_data_width, min_col_width)
-        col_w = min(col_w, max_col_width)
-        col_widths.append(col_w)
-    total_w = sum(col_widths)
-    if total_w > (pdf.w - 2 * pdf.l_margin):
-        scale = (pdf.w - 2 * pdf.l_margin) / total_w
-        col_widths = [w * scale for w in col_widths]
-    return col_widths
-
 def dataframe_to_pdf(df, title):
     pdf = FPDF()
     pdf.add_page()
@@ -291,7 +251,7 @@ def dataframe_to_pdf(df, title):
         pdf.cell(0, 10, title, ln=True, align="C")
     pdf.set_font("Arial", "B", 10)
     pdf.ln(4)
-    col_widths = calc_col_widths(df, pdf)
+    col_widths = [max(28, min(60, pdf.get_string_width(str(col)) + 6)) for col in df.columns]
     row_height = pdf.font_size * 1.7
     for col, w in zip(df.columns, col_widths):
         pdf.cell(w, row_height, str(col), border=1, align='C')
@@ -309,7 +269,7 @@ def dataframe_to_pdf(df, title):
     return BytesIO(pdf_bytes)
 
 def is_comparative_sheet(sheet_name):
-    return sheet_name.lower().startswith("comparative analysis")
+    return sheet_name.lower().startswith("comp_") or sheet_name.lower().startswith("comparative analysis")
 
 # ------ APP MAIN ------
 st.set_page_config(page_title="Kerala Survey Dashboard", layout="wide")
@@ -317,7 +277,6 @@ st.markdown("<h1 style='text-align: center; color: #0099ff;'>🤖 Kerala Survey 
 
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
 if 'username' not in st.session_state: st.session_state['username'] = ""
-
 menu = st.sidebar.radio("Menu", ["Dashboard", "Set/Change Password"])
 
 if not st.session_state['logged_in'] and menu == "Dashboard":
@@ -332,101 +291,75 @@ if menu == "Set/Change Password":
 try:
     gc = get_gspread_client()
     all_sheets = [ws.title for ws in gc.open(SHEET_NAME).worksheets()]
-    pivot_sheets = [title for title in all_sheets if (title.lower().startswith("q") and "_" in title)]
     comparative_sheets = [title for title in all_sheets if is_comparative_sheet(title)]
-    sheet_options = pivot_sheets + comparative_sheets
+    # Pivot tabs for each month/question: e.g. "May_Which_party_did_you_vote_for"
+    pivot_months = sorted(list(set(tab.split('_')[0] for tab in all_sheets if "_" in tab and not is_comparative_sheet(tab))))
 except Exception as e:
     st.error(f"Could not connect to Google Sheet: {e}")
     st.stop()
 
-if not sheet_options:
-    st.warning("No survey sheets found.")
+if not comparative_sheets:
+    st.warning("No comparative analysis sheets found.")
     st.stop()
 
-# Auto-select the first comparative sheet if it exists, else default
-default_index = 0
-if comparative_sheets:
-    default_index = sheet_options.index(comparative_sheets[0])
-selected_sheet = st.sidebar.selectbox("Select a Sheet", sheet_options, index=default_index)
+# ---- 1. Show Comparative Analysis (Overall) At Top ----
+st.header("Comparative Analysis (Overall)")
+comp_overall_sheet = None
+# Prefer the one with only "Overall" or first comparative
+for cs in comparative_sheets:
+    comp_overall_sheet = cs
+    break
 
-data = load_pivot_data(gc, SHEET_NAME, selected_sheet)
-
-if is_comparative_sheet(selected_sheet):
-    # --- Comparative Analysis Sheet Mode ---
-    diff_block = find_difference_block(data)
-    if diff_block:
-        diff_df = extract_difference_df(data, diff_block)
-        if not diff_df.empty:
-            st.subheader("Difference Table (Auto-selected)")
-            st.table(diff_df.style.set_properties(**{'text-align': 'center'}).set_table_styles(
-                [{'selector': 'th', 'props': [('text-align', 'center')]}]
-            ))
-            # Try to find a category/group column (first non-numeric column)
-            group_col = None
-            for col in diff_df.columns:
-                try:
-                    pd.to_numeric(diff_df[col])
-                except Exception:
-                    group_col = col
-                    break
-            if group_col is None:
-                group_col = diff_df.columns[0]
-            value_cols = [col for col in diff_df.columns if col != group_col and is_numeric_column(diff_df[col])]
-            if value_cols:
-                st.subheader("Difference Plot (Bar)")
-                plot_df = diff_df[[group_col] + value_cols].copy()
-                for col in value_cols:
-                    plot_df[col] = pd.to_numeric(plot_df[col], errors="coerce")
-                plot_df = plot_df.dropna()
-                fig = px.bar(
-                    plot_df,
-                    x=group_col,
-                    y=value_cols,
-                    barmode="group",
-                    title="Difference by Group",
-                    template="plotly_white"
-                )
-                st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("No difference row found in comparative analysis sheet.")
+if comp_overall_sheet:
+    comp_data = load_pivot_data(gc, SHEET_NAME, comp_overall_sheet)
+    blocks = find_cuts_and_blocks(comp_data)
+    # Find the "Overall" block
+    overall_block = None
+    for b in blocks:
+        if "overall" in b["label"].lower():
+            overall_block = b
+            break
+    if not overall_block and blocks:
+        overall_block = blocks[0]
+    if overall_block:
+        df = extract_block_df(comp_data, overall_block)
+        st.subheader(f"Overall Survey Results")
+        st.table(df.style.set_properties(**{'text-align': 'center'}).set_table_styles(
+            [{'selector': 'th', 'props': [('text-align', 'center')]}]
+        ))
+        auto_analyze_and_plot(df, overall_block["label"])
     else:
-        st.info("No difference block found in comparative analysis sheet.")
+        st.info("No 'Overall' cut found in comparative analysis sheet.")
 
-    # Plot the rest of the blocks as usual, auto-selecting the first available cut that isn't a difference block
-    blocks = find_cuts_and_blocks(data)
-    cut_labels = [b["label"] for b in blocks if not str(b["label"]).strip().lower().startswith("difference (")]
-    if not cut_labels:
-        st.warning("No cuts found in this sheet.")
+# ---- 2. Month/Tab Deep Dive Dropdown ----
+tab1, tab2 = st.columns([2, 4])
+with tab1:
+    st.header("Deep Dive by Month")
+    if not pivot_months:
+        st.warning("No monthly survey sheets found.")
         st.stop()
-    # Auto-select the first available cut; user can override
-    selected_cut = st.sidebar.selectbox("Select a Cut/Crosstab", cut_labels, index=0)
-    block = next(b for b in blocks if b["label"] == selected_cut)
-    df = extract_block_df(data, block)
-    st.subheader(f"Data Table (Logged in as: {st.session_state['username']})")
-    st.table(df.style.set_properties(**{'text-align': 'center'}).set_table_styles(
-        [{'selector': 'th', 'props': [('text-align', 'center')]}]
-    ))
-    csv = df.to_csv(index=False).encode('utf-8')
-    st.download_button("Download CSV", csv, f"{selected_cut}_{selected_sheet}.csv", "text/csv")
-    pdf_file = dataframe_to_pdf(df, f"{selected_cut} ({selected_sheet})")
-    st.download_button("Download PDF", pdf_file, f"{selected_cut}_{selected_sheet}.pdf", "application/pdf")
-    auto_analyze_and_plot(df, selected_cut)
-else:
-    # --- Normal Question Sheet Mode ---
-    blocks = find_cuts_and_blocks(data)
-    cut_labels = [b["label"] for b in blocks]
-    if not cut_labels:
-        st.warning("No cuts found in this sheet.")
-        st.stop()
-    selected_cut = st.sidebar.selectbox("Select a Cut/Crosstab", cut_labels)
-    block = next(b for b in blocks if b["label"] == selected_cut)
-    df = extract_block_df(data, block)
-    st.subheader(f"Data Table (Logged in as: {st.session_state['username']})")
-    st.table(df.style.set_properties(**{'text-align': 'center'}).set_table_styles(
-        [{'selector': 'th', 'props': [('text-align', 'center')]}]
-    ))
-    csv = df.to_csv(index=False).encode('utf-8')
-    st.download_button("Download CSV", csv, f"{selected_cut}_{selected_sheet}.csv", "text/csv")
-    pdf_file = dataframe_to_pdf(df, f"{selected_cut} ({selected_sheet})")
-    st.download_button("Download PDF", pdf_file, f"{selected_cut}_{selected_sheet}.pdf", "application/pdf")
-    auto_analyze_and_plot(df, selected_cut)
+    selected_month = st.selectbox("Select Month to Deep Dive", pivot_months)
+
+# ---- 3. Show All Pivot Tables for Selected Month ----
+with tab2:
+    matching_pivot_tabs = [tab for tab in all_sheets if tab.startswith(selected_month+"_") and not is_comparative_sheet(tab)]
+    if not matching_pivot_tabs:
+        st.warning(f"No pivot tables found for {selected_month}.")
+    else:
+        st.header(f"Pivot Tables for {selected_month}")
+        pivot_tab = st.selectbox("Select Pivot Table (Question)", matching_pivot_tabs)
+        pivot_data = load_pivot_data(gc, SHEET_NAME, pivot_tab)
+        blocks = find_cuts_and_blocks(pivot_data)
+        cut_labels = [b["label"] for b in blocks]
+        selected_cut = st.selectbox("Select a Cut/Crosstab", cut_labels)
+        block = next(b for b in blocks if b["label"] == selected_cut)
+        df = extract_block_df(pivot_data, block)
+        st.subheader(f"Data Table (Logged in as: {st.session_state['username']})")
+        st.table(df.style.set_properties(**{'text-align': 'center'}).set_table_styles(
+            [{'selector': 'th', 'props': [('text-align', 'center')]}]
+        ))
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.download_button("Download CSV", csv, f"{selected_cut}_{pivot_tab}.csv", "text/csv")
+        pdf_file = dataframe_to_pdf(df, f"{selected_cut} ({pivot_tab})")
+        st.download_button("Download PDF", pdf_file, f"{selected_cut}_{pivot_tab}.pdf", "application/pdf")
+        auto_analyze_and_plot(df, selected_cut)
