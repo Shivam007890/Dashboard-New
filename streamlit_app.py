@@ -297,8 +297,14 @@ try:
     comparative_questions = []
     for cs in comparative_sheets:
         if cs.lower().startswith("comp_"):
-            q = cs[5:].replace("_", " ", 1).replace("_", " ")
-            comparative_questions.append((q, cs))
+            # Try to extract a cleaner question name (after comp_, replace first _ with " - ", then others with space)
+            q = cs[5:]
+            if "_" in q:
+                parts = q.split("_", 1)
+                q_label = parts[0].capitalize() + " - " + parts[1].replace("_", " ")
+            else:
+                q_label = q.capitalize()
+            comparative_questions.append((q_label, cs))
         else:
             comparative_questions.append((cs, cs))
     pivot_months = sorted(list(set(tab.split('_')[0] for tab in all_sheets if "_" in tab and not is_comparative_sheet(tab))))
@@ -316,12 +322,13 @@ if not comparative_questions:
     st.warning("No comparative analysis questions found.")
 else:
     question_labels = [q for q, cs in comparative_questions]
-    selected_question_idx = st.selectbox(
+    selected_label = st.selectbox(
         "Select Question for Comparative Analysis",
         question_labels,
         key="comparative_question_select"
     )
-    selected_q_label, selected_cs = comparative_questions[selected_question_idx]
+    # Find corresponding tuple using label (not index)
+    selected_q_label, selected_cs = next((q_label, cs) for q_label, cs in comparative_questions if q_label == selected_label)
     comp_data = load_pivot_data(gc, SHEET_NAME, selected_cs)
     blocks = find_cuts_and_blocks(comp_data)
     # Find the "Overall" block
@@ -333,8 +340,8 @@ else:
     if not overall_block and blocks:
         overall_block = blocks[0]
     if overall_block:
+        st.markdown(f"#### Comparative Results: {selected_q_label}")
         df = extract_block_df(comp_data, overall_block)
-        st.subheader(f"Comparative Results: {selected_q_label}")
         st.table(df.style.set_properties(**{'text-align': 'center'}).set_table_styles(
             [{'selector': 'th', 'props': [('text-align', 'center')]}]
         ))
