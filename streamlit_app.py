@@ -217,7 +217,6 @@ def auto_analyze_and_plot(df, question=None, pie_key=None):
         fig2.update_layout(template="seaborn")
         st.plotly_chart(fig2, use_container_width=True)
         row_options = plot_df[category_col].tolist()
-        # --- FIX: Use a unique key for each selectbox instance
         unique_key = pie_key or f"pieview_{str(question)[:20].replace(' ','_')}"
         row_option = st.selectbox("Show distribution for (Pie View)", row_options, key=unique_key)
         pie_row = plot_df[plot_df[category_col] == row_option][value_cols].iloc[0]
@@ -294,6 +293,14 @@ try:
     gc = get_gspread_client()
     all_sheets = [ws.title for ws in gc.open(SHEET_NAME).worksheets()]
     comparative_sheets = [title for title in all_sheets if is_comparative_sheet(title)]
+    # Extract question names from comparative sheet names:
+    comparative_questions = []
+    for cs in comparative_sheets:
+        if cs.lower().startswith("comp_"):
+            q = cs[5:].replace("_", " ", 1).replace("_", " ")
+            comparative_questions.append((q, cs))
+        else:
+            comparative_questions.append((cs, cs))
     pivot_months = sorted(list(set(tab.split('_')[0] for tab in all_sheets if "_" in tab and not is_comparative_sheet(tab))))
 except Exception as e:
     st.error(f"Could not connect to Google Sheet: {e}")
@@ -303,15 +310,19 @@ if not comparative_sheets:
     st.warning("No comparative analysis sheets found.")
     st.stop()
 
-# ---- 1. Show Comparative Analysis (Overall) At Top ----
-st.header("Comparative Analysis (Overall)")
-comp_overall_sheet = None
-for cs in comparative_sheets:
-    comp_overall_sheet = cs
-    break
-
-if comp_overall_sheet:
-    comp_data = load_pivot_data(gc, SHEET_NAME, comp_overall_sheet)
+# ---- 1. Show Comparative Analysis (Question Selection) At Top ----
+st.header("Comparative Analysis")
+if not comparative_questions:
+    st.warning("No comparative analysis questions found.")
+else:
+    question_labels = [q for q, cs in comparative_questions]
+    selected_question_idx = st.selectbox(
+        "Select Question for Comparative Analysis",
+        question_labels,
+        key="comparative_question_select"
+    )
+    selected_q_label, selected_cs = comparative_questions[selected_question_idx]
+    comp_data = load_pivot_data(gc, SHEET_NAME, selected_cs)
     blocks = find_cuts_and_blocks(comp_data)
     # Find the "Overall" block
     overall_block = None
@@ -323,13 +334,15 @@ if comp_overall_sheet:
         overall_block = blocks[0]
     if overall_block:
         df = extract_block_df(comp_data, overall_block)
-        st.subheader(f"Overall Survey Results")
+        st.subheader(f"Comparative Results: {selected_q_label}")
         st.table(df.style.set_properties(**{'text-align': 'center'}).set_table_styles(
             [{'selector': 'th', 'props': [('text-align', 'center')]}]
         ))
-        auto_analyze_and_plot(df, overall_block["label"], pie_key="pie_overall")
+        auto_analyze_and_plot(df, overall_block["label"], pie_key=f"pie_overall_{selected_cs}")
     else:
         st.info("No 'Overall' cut found in comparative analysis sheet.")
+
+st.markdown("---")
 
 # ---- 2. Month/Tab Deep Dive Dropdown ----
 tab1, tab2 = st.columns([2, 4])
