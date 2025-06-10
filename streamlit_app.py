@@ -215,16 +215,20 @@ def dataframe_to_pdf(df, title):
 
 def plot_horizontal_bar_plotly(df):
     label_col = df.columns[0]
-    value_cols = [col for col in df.columns[1:] if pd.api.types.is_numeric_dtype(df[col])]
+    # Exclude columns with 'sample', 'total', or 'grand' in their name
+    exclude_keywords = ['sample', 'total', 'grand']
+    value_cols = [col for col in df.columns[1:]
+                  if not any(k in col.strip().lower() for k in exclude_keywords)]
+    # Try to convert values to float (handle %)
+    for col in value_cols:
+        try:
+            df[col] = df[col].astype(str).str.replace('%', '', regex=False).astype(float)
+        except Exception:
+            continue
     if not value_cols:
-        value_cols = [col for col in df.columns[1:]]
-        for col in value_cols:
-            # Try to convert percentages
-            try:
-                df[col] = df[col].astype(str).str.replace('%', '', regex=False).astype(float)
-            except Exception:
-                continue
-    # For demo, plot all value columns as series if more than one, else plot the first
+        st.warning("No suitable value columns to plot.")
+        return
+    # Multiple value columns: grouped bar
     if len(value_cols) == 1:
         value_col = value_cols[0]
         fig = px.bar(df, y=label_col, x=value_col, orientation='h',
@@ -236,7 +240,6 @@ def plot_horizontal_bar_plotly(df):
                           showlegend=False, bargap=0.2)
         fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     else:
-        # Multiple value columns: grouped bar
         long_df = df.melt(id_vars=label_col, value_vars=value_cols, var_name='Category', value_name='Value')
         fig = px.bar(long_df, y=label_col, x='Value', color='Category',
                      orientation='h', barmode='group',
