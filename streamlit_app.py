@@ -266,7 +266,14 @@ def individual_dashboard(gc):
     )
     try:
         all_sheets = [ws.title for ws in gc.open(SHEET_NAME).worksheets()]
-        sheets = all_sheets # <-- All question tabs, do not filter by report type!
+        sheets = all_sheets  # All question sheets
+        selected_sheet = st.selectbox("Select Question Sheet", sheets)
+        data = load_pivot_data(gc, SHEET_NAME, selected_sheet)
+        blocks = find_cuts_and_blocks(data)
+        all_labels = [b["label"] for b in blocks]
+        st.write("DEBUG: All cut labels found in this sheet:", all_labels)
+
+        # Define, for each report type, which blocks/cuts to show
         if level.startswith("A."):
             report_level = "Statewide"
             cuts = [
@@ -291,13 +298,10 @@ def individual_dashboard(gc):
                 "AC-wise (Assembly Constituency)", "ACwise", "AC Wise", "Assembly Constituency wise", "AC-wise"
             ]
 
-        selected_sheet = st.selectbox(f"Select Question Sheet", sheets)
-        data = load_pivot_data(gc, SHEET_NAME, selected_sheet)
-        blocks = find_cuts_and_blocks(data)
-        st.write("DEBUG: All cut labels found in this sheet:", [b["label"] for b in blocks])
-        block_labels = [b["label"] for b in blocks if b["label"] in cuts]
+        # Only show blocks that match the cuts for the selected report type
+        block_labels = [b for b in all_labels if b in cuts]
         if not block_labels:
-            st.warning(f"No {report_level} cuts found in this question. Available cuts: {', '.join([b['label'] for b in blocks])}")
+            st.warning(f"No {report_level} cuts found in this question. Available cuts: {', '.join(all_labels)}")
             return
         selected_block_label = st.selectbox("Select Block", block_labels)
         block = next(b for b in blocks if b["label"] == selected_block_label)
