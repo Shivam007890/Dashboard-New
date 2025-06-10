@@ -215,11 +215,12 @@ def dataframe_to_pdf(df, title):
 
 def plot_horizontal_bar_plotly(df):
     label_col = df.columns[0]
+    # Exclude rows where first column contains 'difference'
+    df = df[~df[label_col].astype(str).str.lower().str.contains('difference')]
     # Exclude columns with 'sample', 'total', or 'grand' in their name
     exclude_keywords = ['sample', 'total', 'grand']
     value_cols = [col for col in df.columns[1:]
                   if not any(k in col.strip().lower() for k in exclude_keywords)]
-    # Try to convert values to float (handle %)
     for col in value_cols:
         try:
             df[col] = df[col].astype(str).str.replace('%', '', regex=False).astype(float)
@@ -228,7 +229,6 @@ def plot_horizontal_bar_plotly(df):
     if not value_cols:
         st.warning("No suitable value columns to plot.")
         return
-    # Multiple value columns: grouped bar
     if len(value_cols) == 1:
         value_col = value_cols[0]
         fig = px.bar(df, y=label_col, x=value_col, orientation='h',
@@ -368,7 +368,6 @@ def individual_dashboard(gc):
         styled_df = split_df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
         st.dataframe(styled_df, height=min(400, 50 + 40 * len(split_df)))
         value_cols = get_value_columns(split_df)
-        # Plot pretty chart
         if value_cols:
             try:
                 plot_horizontal_bar_plotly(split_df)
