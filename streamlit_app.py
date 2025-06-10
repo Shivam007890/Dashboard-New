@@ -271,7 +271,6 @@ def individual_dashboard(gc):
         data = load_pivot_data(gc, SHEET_NAME, selected_sheet)
         blocks = find_cuts_and_blocks(data)
         all_labels = [b["label"] for b in blocks]
-        st.write("DEBUG: All cut labels found in this sheet:", all_labels)
 
         # Define, for each report type, which blocks/cuts to show
         if level.startswith("A."):
@@ -306,21 +305,42 @@ def individual_dashboard(gc):
         selected_block_label = st.selectbox("Select Block", block_labels)
         block = next(b for b in blocks if b["label"] == selected_block_label)
         df = extract_block_df(data, block)
+
+        # DRILL DOWN for Region/District/AC
+        if (
+            level.startswith("B.")  # Region Wise
+            or level.startswith("C.")  # District Wise
+            or level.startswith("D.")  # AC Wise
+        ):
+            first_col = df.columns[0]
+            unique_splits = [v for v in df[first_col].unique() if pd.notna(v) and str(v).strip() != '']
+            if len(unique_splits) > 1:
+                selected_split = st.selectbox(
+                    f"Select {report_level.split()[0]}",
+                    unique_splits,
+                    key=f"split_{level}"
+                )
+                split_df = df[df[first_col] == selected_split].reset_index(drop=True)
+            else:
+                split_df = df
+        else:
+            split_df = df
+
         st.markdown(f"### Data Table: {selected_sheet} - {selected_block_label}")
-        styled_df = df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
-        st.dataframe(styled_df, height=min(400, 50 + 40 * len(df)))
-        value_cols = get_value_columns(df)
+        styled_df = split_df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
+        st.dataframe(styled_df, height=min(400, 50 + 40 * len(split_df)))
+        value_cols = get_value_columns(split_df)
         if value_cols:
             try:
-                chart_df = df.copy()
+                chart_df = split_df.copy()
                 for col in value_cols:
                     chart_df[col] = chart_df[col].astype(str).str.replace('%', '').astype(float)
                 st.bar_chart(chart_df[value_cols])
             except Exception:
                 pass
-        csv = df.to_csv(index=False).encode('utf-8')
+        csv = split_df.to_csv(index=False).encode('utf-8')
         st.download_button("Download CSV", csv, f"{selected_sheet}_{selected_block_label}.csv", "text/csv")
-        pdf_file = dataframe_to_pdf(df, f"{selected_sheet} - {selected_block_label}")
+        pdf_file = dataframe_to_pdf(split_df, f"{selected_sheet} - {selected_block_label}")
         st.download_button("Download PDF", pdf_file, f"{selected_sheet}_{selected_block_label}.pdf", "application/pdf")
     except Exception as e:
         st.error(f"Could not load individual survey report: {e}")
