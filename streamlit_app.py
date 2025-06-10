@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
-import plotly.express as px
 from io import BytesIO
 from fpdf import FPDF
 import os
@@ -280,14 +279,34 @@ def individual_dashboard(gc):
         all_sheets = [ws.title for ws in gc.open(SHEET_NAME).worksheets()]
         st.write("All available sheets:", all_sheets)  # Debug: see available sheet names
 
+        # Extra robust patterns:
+        def ac_match(name):
+            name_l = name.lower()
+            return (
+                ("ac" in name_l and not name_l.startswith("comp_") and not "district" in name_l and not "region" in name_l)
+                or "constituency" in name_l
+            )
+
+        def district_match(name):
+            name_l = name.lower()
+            return "district" in name_l
+
+        def region_match(name):
+            name_l = name.lower()
+            return "region" in name_l
+
+        def statewide_match(name):
+            name_l = name.lower()
+            return (
+                "_" in name_l
+                and not region_match(name)
+                and not district_match(name)
+                and not ac_match(name)
+                and not name_l.startswith("comp_")
+            )
+
         if level.startswith("A."):
-            sheets = [
-                s for s in all_sheets if "_" in s and not any(
-                    x in s.lower() for x in [
-                        "region", "district", "ac", "constituency", "comp"
-                    ]
-                )
-            ]
+            sheets = [s for s in all_sheets if statewide_match(s)]
             report_level = "Statewide"
             cuts = [
                 "Overall", "Gender-wise", "Age-wise", "Religion-wise", "Community-wise",
@@ -295,16 +314,15 @@ def individual_dashboard(gc):
                 "Community + Gender-wise", "Community + Religion-wise", "First-time Voters"
             ]
         elif level.startswith("B."):
-            sheets = [s for s in all_sheets if "region" in s.lower()]
+            sheets = [s for s in all_sheets if region_match(s)]
             report_level = "Region Wise"
             cuts = ["Region-wise (Malabar/Non Malabar)", "Region + Religion-wise"]
         elif level.startswith("C."):
-            sheets = [s for s in all_sheets if "district" in s.lower()]
+            sheets = [s for s in all_sheets if district_match(s)]
             report_level = "District Wise"
             cuts = ["District-wise"]
         else:
-            # Robust matching for AC/constituency in any form
-            sheets = [s for s in all_sheets if ("ac" in s.lower() or "constituency" in s.lower())]
+            sheets = [s for s in all_sheets if ac_match(s)]
             report_level = "AC Wise"
             cuts = ["AC-wise (Assembly Constituency)"]
 
