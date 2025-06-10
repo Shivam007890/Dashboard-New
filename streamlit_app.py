@@ -266,7 +266,7 @@ def main_dashboard(gc):
                 mime="image/png"
             )
     else:
-        st.warning("Kerala Political Map image not found. Please upload 'kerala_political_map.png' to the app directory.")
+        st.warning("Kerala Political Map image not found. Please add it to your repo directory (same folder as your script).")
     choice = st.radio(
         "What would you like to see?",
         [
