@@ -7,6 +7,7 @@ from fpdf import FPDF
 import os
 import json
 import tempfile
+import plotly.express as px
 
 SHEET_NAME = "Kerala Weekly Survey Automation Dashboard Test Run"
 
@@ -212,6 +213,41 @@ def dataframe_to_pdf(df, title):
     pdf_bytes = pdf.output(dest='S').encode('latin1')
     return BytesIO(pdf_bytes)
 
+def plot_horizontal_bar_plotly(df):
+    label_col = df.columns[0]
+    value_cols = [col for col in df.columns[1:] if pd.api.types.is_numeric_dtype(df[col])]
+    if not value_cols:
+        value_cols = [col for col in df.columns[1:]]
+        for col in value_cols:
+            # Try to convert percentages
+            try:
+                df[col] = df[col].astype(str).str.replace('%', '', regex=False).astype(float)
+            except Exception:
+                continue
+    # For demo, plot all value columns as series if more than one, else plot the first
+    if len(value_cols) == 1:
+        value_col = value_cols[0]
+        fig = px.bar(df, y=label_col, x=value_col, orientation='h',
+                     text=value_col,
+                     color=label_col,
+                     color_discrete_sequence=px.colors.qualitative.Pastel)
+        fig.update_layout(title=f"Distribution by {label_col}",
+                          xaxis_title=value_col, yaxis_title=label_col,
+                          showlegend=False, bargap=0.2)
+        fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
+    else:
+        # Multiple value columns: grouped bar
+        long_df = df.melt(id_vars=label_col, value_vars=value_cols, var_name='Category', value_name='Value')
+        fig = px.bar(long_df, y=label_col, x='Value', color='Category',
+                     orientation='h', barmode='group',
+                     text='Value',
+                     color_discrete_sequence=px.colors.qualitative.Pastel)
+        fig.update_layout(title=f"Distribution by {label_col}",
+                          xaxis_title='Value', yaxis_title=label_col,
+                          bargap=0.2, legend_title="Category")
+        fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
+    st.plotly_chart(fig, use_container_width=True)
+
 def main_dashboard(gc):
     st.markdown("<h1 style='text-align: center;'>🤖 Kerala Survey Dashboard</h1>", unsafe_allow_html=True)
     choice = st.radio(
@@ -246,6 +282,7 @@ def comparative_dashboard(gc):
         st.markdown("### Comparative Results")
         styled_df = df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
         st.dataframe(styled_df, height=min(400, 50 + 40 * len(df)))
+        plot_horizontal_bar_plotly(df)
         csv = df.to_csv(index=False).encode('utf-8')
         st.download_button("Download CSV", csv, f"{selected_sheet}_comparative.csv", "text/csv")
         pdf_file = dataframe_to_pdf(df, f"Comparative Analysis - {selected_sheet}")
@@ -272,7 +309,6 @@ def individual_dashboard(gc):
         blocks = find_cuts_and_blocks(data)
         all_labels = [b["label"] for b in blocks]
 
-        # Define, for each report type, which blocks/cuts to show
         if level.startswith("A."):
             report_level = "Statewide"
             cuts = [
@@ -297,7 +333,6 @@ def individual_dashboard(gc):
                 "AC-wise (Assembly Constituency)", "ACwise", "AC Wise", "Assembly Constituency wise", "AC-wise"
             ]
 
-        # Only show blocks that match the cuts for the selected report type
         block_labels = [b for b in all_labels if b in cuts]
         if not block_labels:
             st.warning(f"No {report_level} cuts found in this question. Available cuts: {', '.join(all_labels)}")
@@ -330,12 +365,10 @@ def individual_dashboard(gc):
         styled_df = split_df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
         st.dataframe(styled_df, height=min(400, 50 + 40 * len(split_df)))
         value_cols = get_value_columns(split_df)
+        # Plot pretty chart
         if value_cols:
             try:
-                chart_df = split_df.copy()
-                for col in value_cols:
-                    chart_df[col] = chart_df[col].astype(str).str.replace('%', '').astype(float)
-                st.bar_chart(chart_df[value_cols])
+                plot_horizontal_bar_plotly(split_df)
             except Exception:
                 pass
         csv = split_df.to_csv(index=False).encode('utf-8')
