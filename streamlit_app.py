@@ -253,6 +253,15 @@ def plot_horizontal_bar_plotly(df):
 
 def main_dashboard(gc):
     st.markdown("<h1 style='text-align: center;'>🤖 Kerala Survey Dashboard</h1>", unsafe_allow_html=True)
+    # Show Kerala political map at the top for better visualisation
+    st.image("kerala_political_map.png", caption="Kerala Political Map", use_column_width=True)
+    with open("kerala_political_map.png", "rb") as f:
+        st.download_button(
+            label="Download Kerala Political Map",
+            data=f,
+            file_name="kerala_political_map.png",
+            mime="image/png"
+        )
     choice = st.radio(
         "What would you like to see?",
         [
