@@ -8,7 +8,6 @@ import os
 import json
 import tempfile
 
-# --- CONFIG ---
 SHEET_NAME = "Kerala Weekly Survey Automation Dashboard Test Run"
 
 USERS = {
@@ -145,19 +144,11 @@ def get_value_columns(df):
         if any(k in col_lc for k in skip_keywords):
             continue
         try:
-            pd.to_numeric(df[col].str.replace('%', '', regex=False), errors='raise')
+            pd.to_numeric(df[col].astype(str).str.replace('%', '', regex=False), errors='raise')
             cols.append(col)
         except Exception:
             continue
     return cols
-
-def plot_comparative_line_chart(df):
-    chart_df = df.copy()
-    chart_df = chart_df[~chart_df.iloc[:, 0].astype(str).str.lower().str.contains('difference')]
-    for col in chart_df.columns[1:]:
-        chart_df[col] = chart_df[col].astype(str).str.replace('%', '').astype(float)
-    chart_df = chart_df.set_index(chart_df.columns[0])
-    st.line_chart(chart_df)
 
 def dataframe_to_pdf(df, title):
     pdf = FPDF()
@@ -230,7 +221,6 @@ def main_dashboard(gc):
             "Individual Survey Reports"
         ]
     )
-
     if choice == "Comparative Analysis Over Different Surveys":
         comparative_dashboard(gc)
     elif choice == "Individual Survey Reports":
@@ -256,7 +246,7 @@ def comparative_dashboard(gc):
         st.markdown("### Comparative Results")
         styled_df = df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
         st.dataframe(styled_df, height=min(400, 50 + 40 * len(df)))
-        plot_comparative_line_chart(df)
+        # Could add plot here if desired
         csv = df.to_csv(index=False).encode('utf-8')
         st.download_button("Download CSV", csv, f"{selected_sheet}_comparative.csv", "text/csv")
         pdf_file = dataframe_to_pdf(df, f"Comparative Analysis - {selected_sheet}")
@@ -277,9 +267,7 @@ def individual_dashboard(gc):
     )
     try:
         all_sheets = [ws.title for ws in gc.open(SHEET_NAME).worksheets()]
-        # ALL sheets are question sheets, do NOT filter by report type
-        sheets = all_sheets
-        
+        sheets = all_sheets # <-- All question tabs, do not filter by report type!
         if level.startswith("A."):
             report_level = "Statewide"
             cuts = [
