@@ -278,4 +278,132 @@ def comparative_dashboard(gc):
         data = load_pivot_data(gc, SHEET_NAME, selected_sheet)
         blocks = find_cuts_and_blocks(data)
         if not blocks:
-            st.warning("No
+            st.warning("No data blocks found in this sheet.")
+            return
+        block = blocks[0]
+        df = extract_block_df(data, block)
+        st.markdown("### Comparative Results")
+        styled_df = df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
+        st.dataframe(styled_df, height=min(400, 50 + 40 * len(df)))
+        plot_horizontal_bar_plotly(df)
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.download_button("Download CSV", csv, f"{selected_sheet}_comparative.csv", "text/csv")
+        pdf_file = dataframe_to_pdf(df, f"Comparative Analysis - {selected_sheet}")
+        st.download_button("Download PDF", pdf_file, f"{selected_sheet}_comparative.pdf", "application/pdf")
+    except Exception as e:
+        st.error(f"Could not load comparative analysis: {e}")
+
+def individual_dashboard(gc):
+    st.header("Individual Survey Reports")
+    level = st.radio(
+        "Select Report Level",
+        [
+            "A. Individual State Wide Survey Reports",
+            "B. Region Wise Survey Reports",
+            "C. District Wise Survey Reports",
+            "D. AC Wise Survey Reports"
+        ]
+    )
+    try:
+        all_sheets = [ws.title for ws in gc.open(SHEET_NAME).worksheets()]
+        question_sheets = [
+            s for s in all_sheets
+            if not (
+                s.lower().startswith('comp_') or
+                s.lower().startswith('comparative analysis') or
+                'summary' in s.lower() or
+                'dashboard' in s.lower() or
+                'meta' in s.lower() or
+                'info' in s.lower() or
+                s.startswith('_')
+            )
+        ]
+        if not question_sheets:
+            st.warning("No question sheets found.")
+            return
+        selected_sheet = st.selectbox("Select Question Sheet", question_sheets)
+        data = load_pivot_data(gc, SHEET_NAME, selected_sheet)
+        blocks = find_cuts_and_blocks(data)
+        all_labels = [b["label"] for b in blocks]
+
+        if level.startswith("A."):
+            report_level = "Statewide"
+            cuts = [
+                "Overall", "Gender-wise", "Age-wise", "Religion-wise", "Community-wise",
+                "Gender + Religion-wise", "Age + Religion-wise", "Age + Gender-wise",
+                "Community + Gender-wise", "Community + Religion-wise", "First-time Voters"
+            ]
+        elif level.startswith("B."):
+            report_level = "Region Wise"
+            cuts = [
+                "Region-wise (Malabar/Non Malabar)", "Region + Religion-wise",
+                "Regionwise", "Region Wise"
+            ]
+        elif level.startswith("C."):
+            report_level = "District Wise"
+            cuts = [
+                "District-wise", "Districtwise", "District Wise"
+            ]
+        else:
+            report_level = "AC Wise"
+            cuts = [
+                "AC-wise (Assembly Constituency)", "ACwise", "AC Wise", "Assembly Constituency wise", "AC-wise"
+            ]
+
+        block_labels = [b for b in all_labels if b in cuts]
+        if not block_labels:
+            st.warning(f"No {report_level} cuts found in this question. Available cuts: {', '.join(all_labels)}")
+            return
+        selected_block_label = st.selectbox("Select Block", block_labels)
+        block = next(b for b in blocks if b["label"] == selected_block_label)
+        df = extract_block_df(data, block)
+
+        # DRILL DOWN for Region/District/AC
+        if (
+            level.startswith("B.")  # Region Wise
+            or level.startswith("C.")  # District Wise
+            or level.startswith("D.")  # AC Wise
+        ):
+            first_col = df.columns[0]
+            unique_splits = [v for v in df[first_col].unique() if pd.notna(v) and str(v).strip() != '']
+            if len(unique_splits) > 1:
+                selected_split = st.selectbox(
+                    f"Select {report_level.split()[0]}",
+                    unique_splits,
+                    key=f"split_{level}"
+                )
+                split_df = df[df[first_col] == selected_split].reset_index(drop=True)
+            else:
+                split_df = df
+        else:
+            split_df = df
+
+        st.markdown(f"### Data Table: {selected_sheet} - {selected_block_label}")
+        styled_df = split_df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
+        st.dataframe(styled_df, height=min(400, 50 + 40 * len(split_df)))
+        value_cols = get_value_columns(split_df)
+        if value_cols:
+            try:
+                plot_horizontal_bar_plotly(split_df)
+            except Exception:
+                pass
+        csv = split_df.to_csv(index=False).encode('utf-8')
+        st.download_button("Download CSV", csv, f"{selected_sheet}_{selected_block_label}.csv", "text/csv")
+        pdf_file = dataframe_to_pdf(split_df, f"{selected_sheet} - {selected_block_label}")
+        st.download_button("Download PDF", pdf_file, f"{selected_sheet}_{selected_block_label}.pdf", "application/pdf")
+    except Exception as e:
+        st.error(f"Could not load individual survey report: {e}")
+
+if __name__ == "__main__":
+    st.set_page_config(page_title="Kerala Survey Dashboard", layout="wide")
+    if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
+    if 'username' not in st.session_state: st.session_state['username'] = ""
+    sidebar_menu = st.sidebar.radio("Menu", ["Dashboard", "Set/Change Password"])
+    if not st.session_state['logged_in'] and sidebar_menu == "Dashboard":
+        login_form()
+        st.stop()
+    if sidebar_menu == "Set/Change Password":
+        password_setup_form()
+        st.stop()
+    gc = get_gspread_client()
+    main_dashboard(gc)
