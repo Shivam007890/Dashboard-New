@@ -156,7 +156,6 @@ def plot_comparative_line_chart(df):
     chart_df = df.copy()
     # Remove the difference/diff rows
     chart_df = chart_df[~chart_df.iloc[:, 0].astype(str).str.lower().str.contains('difference')]
-    # Try to convert all result columns to float
     for col in chart_df.columns[1:]:
         chart_df[col] = chart_df[col].astype(str).str.replace('%', '').astype(float)
     chart_df = chart_df.set_index(chart_df.columns[0])
@@ -227,7 +226,7 @@ def dataframe_to_pdf(df, title):
     return BytesIO(pdf_bytes)
 
 def main_dashboard(gc):
-    st.markdown("<h1 style='text-align: center; color: #0099ff;'>🤖 Kerala Survey Dashboard</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center;'>🤖 Kerala Survey Dashboard</h1>", unsafe_allow_html=True)
     choice = st.radio(
         "What would you like to see?",
         [
@@ -248,25 +247,20 @@ def comparative_dashboard(gc):
         if not comparative_sheets:
             st.warning("No comparative analysis sheets found.")
             return
-        # List questions/analyses available
         question_labels = [s.replace("comp_", "").replace("_", " ", 1).replace("_", " ") if s.lower().startswith("comp_") else s for s in comparative_sheets]
         selected_idx = st.selectbox("Select Question for Comparative Analysis", list(range(len(question_labels))), format_func=lambda i: question_labels[i])
         selected_sheet = comparative_sheets[selected_idx]
         data = load_pivot_data(gc, SHEET_NAME, selected_sheet)
-        # Find block with multiple periods
         blocks = find_cuts_and_blocks(data)
         if not blocks:
             st.warning("No data blocks found in this sheet.")
             return
         block = blocks[0]
         df = extract_block_df(data, block)
-        # Clean up: ensure columns are unique, convert numeric columns
         st.markdown("### Comparative Results")
         styled_df = df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
         st.dataframe(styled_df, height=min(400, 50 + 40 * len(df)))
-        # Show line chart for periods (excluding difference/diff rows)
         plot_comparative_line_chart(df)
-        # Download buttons
         csv = df.to_csv(index=False).encode('utf-8')
         st.download_button("Download CSV", csv, f"{selected_sheet}_comparative.csv", "text/csv")
         pdf_file = dataframe_to_pdf(df, f"Comparative Analysis - {selected_sheet}")
@@ -287,50 +281,64 @@ def individual_dashboard(gc):
     )
     try:
         all_sheets = [ws.title for ws in gc.open(SHEET_NAME).worksheets()]
+        # Use the cuts from your Apps Script
+        state_cuts = [
+            "Overall", "Gender-wise", "Age-wise", "Religion-wise", "Community-wise",
+            "Region-wise (Malabar/Non Malabar)", "Region + Religion-wise",
+            "Gender + Religion-wise", "Age + Religion-wise", "Age + Gender-wise",
+            "Community + Gender-wise", "Community + Religion-wise",
+            "First-time Voters"
+        ]
+        ac_cut = "AC-wise (Assembly Constituency)"
+        district_cut = "District-wise"
+
         if level.startswith("A."):
-            sheets = [s for s in all_sheets if "_" in s and not any(x in s.lower() for x in ["region", "district", "ac", "assembly constituency", "assembly_constituency", "comp"])]
+            sheets = [s for s in all_sheets if
+                      "_" in s
+                      and not any(x in s.lower() for x in [
+                          "region", "district", "ac", "assembly constituency",
+                          "assembly_constituency", "comp"
+                      ])]
             report_level = "Statewide"
+            cuts = state_cuts
         elif level.startswith("B."):
-            sheets = [s for s in all_sheets if "region" in s.lower()]
+            # Accept all region variants
+            region_patterns = ["region", "regionwise", "region wise", "region+religion", "region_report", "rgn"]
+            sheets = [s for s in all_sheets if any(x in s.lower() for x in region_patterns)]
             report_level = "Region Wise"
+            cuts = ["Region-wise (Malabar/Non Malabar)", "Region + Religion-wise"]
         elif level.startswith("C."):
-            sheets = [s for s in all_sheets if "district" in s.lower()]
+            district_patterns = ["district", "districtwise", "district wise", "district_report", "dist"]
+            sheets = [s for s in all_sheets if any(x in s.lower() for x in district_patterns)]
             report_level = "District Wise"
+            cuts = [district_cut]
         else:
-            # Robust AC Wise match: match any of these patterns
-            sheets = [
-                s for s in all_sheets
-                if any(
-                    x in s.lower()
-                    for x in [
-                        "assembly constituency",
-                        "assembly_constituency",
-                        " ac ",
-                        "ac-",
-                        "ac_",
-                        "acwise",
-                        "ac wise"
-                    ]
-                )
+            ac_patterns = [
+                "ac-wise", "acwise", "assembly constituency", "assembly_constituency",
+                " ac ", "ac-", "ac_", "a/c", "ac report", "constituency", "acsurvey",
+                "acsurveyreport", "assemblyconstituency", "acwise report"
             ]
+            sheets = [s for s in all_sheets if any(x in s.lower() for x in ac_patterns)]
             report_level = "AC Wise"
+            cuts = [ac_cut]
+
         if not sheets:
             st.warning(f"No sheets found for {report_level} reports.")
             return
+
         selected_sheet = st.selectbox(f"Select {report_level} Sheet", sheets)
         data = load_pivot_data(gc, SHEET_NAME, selected_sheet)
         blocks = find_cuts_and_blocks(data)
-        if not blocks:
-            st.warning("No data blocks found in this sheet.")
+        block_labels = [b["label"] for b in blocks if b["label"] in cuts]
+        if not block_labels:
+            st.warning(f"No {report_level} cuts found in this sheet. Available cuts: {', '.join([b['label'] for b in blocks])}")
             return
-        block_labels = [b["label"] for b in blocks]
         selected_block_label = st.selectbox("Select Block", block_labels)
         block = next(b for b in blocks if b["label"] == selected_block_label)
         df = extract_block_df(data, block)
         st.markdown(f"### Data Table: {selected_sheet} - {selected_block_label}")
         styled_df = df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
         st.dataframe(styled_df, height=min(400, 50 + 40 * len(df)))
-        # Show bar chart for main question
         value_cols = get_value_columns(df)
         if value_cols:
             try:
@@ -340,7 +348,6 @@ def individual_dashboard(gc):
                 st.bar_chart(chart_df[value_cols])
             except Exception:
                 pass
-        # Download buttons
         csv = df.to_csv(index=False).encode('utf-8')
         st.download_button("Download CSV", csv, f"{selected_sheet}_{selected_block_label}.csv", "text/csv")
         pdf_file = dataframe_to_pdf(df, f"{selected_sheet} - {selected_block_label}")
