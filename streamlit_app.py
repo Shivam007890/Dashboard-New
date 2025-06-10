@@ -184,7 +184,6 @@ def get_value_columns(df):
     return cols
 
 def plot_line_chart(df, question=None):
-    # Only plot columns with numeric values and avoid difference rows
     value_cols = get_value_columns(df)
     if not value_cols:
         st.info("No numeric data to plot.")
@@ -197,7 +196,6 @@ def plot_line_chart(df, question=None):
     if category_col is None:
         category_col = df.columns[0]
     plot_df = df[[category_col] + value_cols].copy()
-    # Convert to numeric
     for col in value_cols:
         plot_df[col] = pd.to_numeric(plot_df[col], errors="coerce")
     plot_df = plot_df.dropna()
@@ -238,7 +236,6 @@ def dataframe_to_pdf(df, title):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", "B", 14)
-    # Title wrap
     max_title_width = pdf.w - 2 * pdf.l_margin
     title_lines = []
     if pdf.get_string_width(title) < max_title_width:
@@ -257,23 +254,28 @@ def dataframe_to_pdf(df, title):
         pdf.cell(0, 10, tline, ln=True, align="C")
     pdf.set_font("Arial", "B", 10)
     pdf.ln(4)
-    # Calculate column widths
     col_widths = []
     max_col_width = (pdf.w - 2 * pdf.l_margin) / len(df.columns)
     for col in df.columns:
         w = max(pdf.get_string_width(str(col)) + 6, max((pdf.get_string_width(str(val)) + 4 for val in df[col]), default=10))
         col_widths.append(min(max(w, 28), max_col_width))
     row_height = pdf.font_size * 1.5
-    # Header
+    # Header row
     for col, w in zip(df.columns, col_widths):
-        pdf.multi_cell(w, row_height, str(col), border=1, align='C', ln=3, max_line_height=pdf.font_size)
+        x_before = pdf.get_x()
+        y_before = pdf.get_y()
+        pdf.multi_cell(w, row_height, str(col), border=1, align='C')
+        pdf.set_xy(x_before + w, y_before)
     pdf.ln(row_height)
     pdf.set_font("Arial", "", 10)
     # Data rows
     for idx, row in df.iterrows():
         for col, w in zip(df.columns, col_widths):
             val = str(row[col]) if not pd.isna(row[col]) else ""
-            pdf.multi_cell(w, row_height, val, border=1, align='C', ln=3, max_line_height=pdf.font_size)
+            x_before = pdf.get_x()
+            y_before = pdf.get_y()
+            pdf.multi_cell(w, row_height, val, border=1, align='C')
+            pdf.set_xy(x_before + w, y_before)
         pdf.ln(row_height)
     pdf_bytes = pdf.output(dest='S').encode('latin1')
     return BytesIO(pdf_bytes)
@@ -304,7 +306,6 @@ try:
     comparative_questions = []
     for cs in comparative_sheets:
         if cs.lower().startswith("comp_"):
-            # Clean label: after comp_, replace first _ with " - ", others with space
             q = cs[5:]
             if "_" in q:
                 parts = q.split("_", 1)
@@ -323,7 +324,6 @@ if not comparative_sheets:
     st.warning("No comparative analysis sheets found.")
     st.stop()
 
-# ---- 1. Comparative Analysis (Question Selection) ----
 st.header("Comparative Analysis")
 if not comparative_questions:
     st.warning("No comparative analysis questions found.")
@@ -345,9 +345,8 @@ else:
     if not overall_block and blocks:
         overall_block = blocks[0]
     st.markdown(f"#### Comparative Results: {selected_q_label}")
-    if overall_block:
+    if overall_block is not None:
         df = extract_block_df(comp_data, overall_block)
-        # Center align and wrap text in table using CSS for Streamlit
         st.markdown(
             """
             <style>
@@ -366,7 +365,6 @@ else:
     else:
         st.info("No 'Overall' cut found in comparative analysis sheet.")
 
-    # Plot difference block if exists
     diff_block = find_difference_block(comp_data)
     if diff_block:
         diff_df = extract_block_df(comp_data, diff_block)
@@ -379,7 +377,6 @@ else:
 
 st.markdown("""---""")
 
-# ---- 2. Month/Tab Deep Dive Dropdown ----
 tab1, tab2 = st.columns([2, 4])
 with tab1:
     st.header("Deep Dive by Month")
