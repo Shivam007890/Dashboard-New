@@ -261,22 +261,39 @@ def dataframe_to_pdf(df, title):
         col_widths.append(min(max(w, 28), max_col_width))
     row_height = pdf.font_size * 1.5
     # Header row
+    y_start = pdf.get_y()
+    max_header_height = 0
     for col, w in zip(df.columns, col_widths):
         x_before = pdf.get_x()
         y_before = pdf.get_y()
         pdf.multi_cell(w, row_height, str(col), border=1, align='C')
+        max_header_height = max(max_header_height, pdf.get_y() - y_before)
         pdf.set_xy(x_before + w, y_before)
-    pdf.ln(row_height)
+    pdf.ln(max_header_height)
     pdf.set_font("Arial", "", 10)
     # Data rows
     for idx, row in df.iterrows():
+        x_left = pdf.l_margin
+        y_top = pdf.get_y()
+        max_cell_height = 0
+        cell_heights = []
+        cell_values = []
         for col, w in zip(df.columns, col_widths):
+            pdf.set_xy(x_left, y_top)
             val = str(row[col]) if not pd.isna(row[col]) else ""
-            x_before = pdf.get_x()
-            y_before = pdf.get_y()
+            # Use split_only to calculate height
+            n_lines = len(pdf.multi_cell(w, row_height, val, border=0, align='C', split_only=True))
+            cell_height = n_lines * row_height
+            cell_heights.append(cell_height)
+            cell_values.append(val)
+            x_left += w
+        max_cell_height = max(cell_heights) if cell_heights else row_height
+        x_left = pdf.l_margin
+        for val, w in zip(cell_values, col_widths):
+            pdf.set_xy(x_left, y_top)
             pdf.multi_cell(w, row_height, val, border=1, align='C')
-            pdf.set_xy(x_before + w, y_before)
-        pdf.ln(row_height)
+            x_left += w
+        pdf.set_y(y_top + max_cell_height)
     pdf_bytes = pdf.output(dest='S').encode('latin1')
     return BytesIO(pdf_bytes)
 
