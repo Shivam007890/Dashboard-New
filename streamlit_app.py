@@ -17,6 +17,81 @@ USERS = {
     "analyst": "analyst2024"
 }
 
+# ---- Custom CSS for gradient backgrounds and other styling ----
+def inject_custom_css():
+    st.markdown("""
+    <style>
+    /* Gradient background for the whole page */
+    .stApp {
+        background: linear-gradient(120deg, #e0c3fc 0%, #8ec5fc 100%) !important;
+        min-height: 100vh;
+    }
+    /* Centering the title and map horizontally */
+    .centered-title {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        justify-content: center;
+        gap: 2rem;
+        margin-bottom: 1rem;
+    }
+    .dashboard-title {
+        font-size: 3rem;
+        font-weight: bold;
+        background: linear-gradient(90deg, #6a11cb, #2575fc, #43e97b 99%, #38f9d7 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+    .map-img {
+        border-radius: 18px;
+        box-shadow: 0 4px 24px rgba(50, 50, 50, 0.18);
+        border: 2px solid #6a11cb;
+        background: #f5fafd;
+        margin-right: 2rem;
+        margin-left: 2rem;
+        max-width: 330px !important;
+        width: 330px !important;
+        display: block;
+    }
+    /* Card style for containers */
+    .stContainer {
+        background: rgba(255,255,255,0.75);
+        border-radius: 18px;
+        padding: 16px;
+        box-shadow: 0 2px 16px rgba(40,40,80,0.1);
+    }
+    /* Make sidebar gradient */
+    section[data-testid="stSidebar"] {
+        background: linear-gradient(135deg, #c471f5 0%, #fa71cd 100%);
+    }
+    /* Style radio buttons and selectboxes */
+    .css-1cpxqw2, .css-1p05t8e, .st-bw {
+        background: linear-gradient(90deg, #43e97b, #38f9d7) !important;
+        color: #0e122e !important;
+        border-radius: 10px !important;
+    }
+    /* Style buttons */
+    .stButton>button {
+        background: linear-gradient(90deg, #fc466b 0%, #3f5efb 100%);
+        color: white;
+        border-radius: 10px;
+        border: none;
+        font-weight: bold;
+        margin: 6px 0;
+        transition: box-shadow 0.3s;
+        box-shadow: 0 2px 8px #8ec5fc90;
+    }
+    .stButton>button:hover {
+        background: linear-gradient(90deg, #43e97b, #38f9d7);
+        color: #333;
+        box-shadow: 0 2px 16px #8ec5fc;
+    }
+    /* Style DataFrames */
+    .stDataFrame {background: rgba(255,255,255,0.9);}
+    </style>
+    """, unsafe_allow_html=True)
+
 def login_form():
     st.markdown("<h2 style='text-align: center;'>Login</h2>", unsafe_allow_html=True)
     with st.form("Login", clear_on_submit=False):
@@ -234,29 +309,45 @@ def plot_horizontal_bar_plotly(df):
         fig = px.bar(df, y=label_col, x=value_col, orientation='h',
                      text=value_col,
                      color=label_col,
-                     color_discrete_sequence=px.colors.qualitative.Pastel)
+                     color_discrete_sequence=px.colors.sequential.Purples)
         fig.update_layout(title=f"Distribution by {label_col}",
                           xaxis_title=value_col, yaxis_title=label_col,
-                          showlegend=False, bargap=0.2)
+                          showlegend=False, bargap=0.2,
+                          plot_bgcolor="rgba(230,245,255,0.8)",
+                          paper_bgcolor="rgba(250,250,255,0.8)"
+                          )
         fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     else:
         long_df = df.melt(id_vars=label_col, value_vars=value_cols, var_name='Category', value_name='Value')
         fig = px.bar(long_df, y=label_col, x='Value', color='Category',
                      orientation='h', barmode='group',
                      text='Value',
-                     color_discrete_sequence=px.colors.qualitative.Pastel)
+                     color_discrete_sequence=px.colors.sequential.Purples)
         fig.update_layout(title=f"Distribution by {label_col}",
                           xaxis_title='Value', yaxis_title=label_col,
-                          bargap=0.2, legend_title="Category")
+                          bargap=0.2, legend_title="Category",
+                          plot_bgcolor="rgba(230,245,255,0.8)",
+                          paper_bgcolor="rgba(250,250,255,0.8)"
+                          )
         fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     st.plotly_chart(fig, use_container_width=True)
 
 def main_dashboard(gc):
-    st.markdown("<h1 style='text-align: center;'>🤖 Kerala Survey Dashboard</h1>", unsafe_allow_html=True)
-    # Show Kerala political map at the top for better visualisation, smaller size, no header or download
+    inject_custom_css()
+    # Centered title and map using HTML/CSS
+    st.markdown("""
+    <div class="centered-title">
+        <img src="data:image/png;base64,iVBORw0KGgo=" alt="Kerala Map" class="map-img" style="width: 250px; height: auto;">
+        <span class="dashboard-title">🤖 Kerala Survey Dashboard</span>
+    </div>
+    """, unsafe_allow_html=True)
+    # Display the actual Kerala map image centered (not as base64, but from file)
     map_path = "kerala_political_map.png"
     if os.path.exists(map_path):
-        st.image(map_path, width=400)
+        # Center the map using columns
+        cols = st.columns([2,4,2])
+        with cols[1]:
+            st.image(map_path, width=320)
     choice = st.radio(
         "What would you like to see?",
         [
@@ -287,7 +378,7 @@ def comparative_dashboard(gc):
         block = blocks[0]
         df = extract_block_df(data, block)
         st.markdown("### Comparative Results")
-        styled_df = df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
+        styled_df = df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line', 'background': 'linear-gradient(90deg,#e0c3fc,#8ec5fc)'})
         st.dataframe(styled_df, height=min(400, 50 + 40 * len(df)))
         plot_horizontal_bar_plotly(df)
         csv = df.to_csv(index=False).encode('utf-8')
@@ -383,7 +474,7 @@ def individual_dashboard(gc):
             split_df = df
 
         st.markdown(f"### Data Table: {selected_sheet} - {selected_block_label}")
-        styled_df = split_df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
+        styled_df = split_df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line', 'background': 'linear-gradient(90deg,#e0c3fc,#8ec5fc)'})
         st.dataframe(styled_df, height=min(400, 50 + 40 * len(split_df)))
         value_cols = get_value_columns(split_df)
         if value_cols:
