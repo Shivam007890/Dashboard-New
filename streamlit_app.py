@@ -281,17 +281,7 @@ def individual_dashboard(gc):
     )
     try:
         all_sheets = [ws.title for ws in gc.open(SHEET_NAME).worksheets()]
-        # Use the cuts from your Apps Script
-        state_cuts = [
-            "Overall", "Gender-wise", "Age-wise", "Religion-wise", "Community-wise",
-            "Region-wise (Malabar/Non Malabar)", "Region + Religion-wise",
-            "Gender + Religion-wise", "Age + Religion-wise", "Age + Gender-wise",
-            "Community + Gender-wise", "Community + Religion-wise",
-            "First-time Voters"
-        ]
-        ac_cut = "AC-wise (Assembly Constituency)"
-        district_cut = "District-wise"
-
+        # Assign cuts strictly as per user request
         if level.startswith("A."):
             sheets = [s for s in all_sheets if
                       "_" in s
@@ -300,9 +290,12 @@ def individual_dashboard(gc):
                           "assembly_constituency", "comp"
                       ])]
             report_level = "Statewide"
-            cuts = state_cuts
+            cuts = [
+                "Overall", "Gender-wise", "Age-wise", "Religion-wise", "Community-wise",
+                "Gender + Religion-wise", "Age + Religion-wise", "Age + Gender-wise",
+                "Community + Gender-wise", "Community + Religion-wise", "First-time Voters"
+            ]
         elif level.startswith("B."):
-            # Accept all region variants
             region_patterns = ["region", "regionwise", "region wise", "region+religion", "region_report", "rgn"]
             sheets = [s for s in all_sheets if any(x in s.lower() for x in region_patterns)]
             report_level = "Region Wise"
@@ -311,7 +304,7 @@ def individual_dashboard(gc):
             district_patterns = ["district", "districtwise", "district wise", "district_report", "dist"]
             sheets = [s for s in all_sheets if any(x in s.lower() for x in district_patterns)]
             report_level = "District Wise"
-            cuts = [district_cut]
+            cuts = ["District-wise"]
         else:
             ac_patterns = [
                 "ac-wise", "acwise", "assembly constituency", "assembly_constituency",
@@ -320,7 +313,7 @@ def individual_dashboard(gc):
             ]
             sheets = [s for s in all_sheets if any(x in s.lower() for x in ac_patterns)]
             report_level = "AC Wise"
-            cuts = [ac_cut]
+            cuts = ["AC-wise (Assembly Constituency)"]
 
         if not sheets:
             st.warning(f"No sheets found for {report_level} reports.")
