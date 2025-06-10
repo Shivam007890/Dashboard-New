@@ -18,7 +18,6 @@ USERS = {
     "analyst": "analyst2024"
 }
 
-# ---- AUTH SECTION ----
 def login_form():
     st.markdown("<h2 style='text-align: center;'>Login</h2>", unsafe_allow_html=True)
     with st.form("Login", clear_on_submit=False):
@@ -139,6 +138,27 @@ def extract_block_df(data, block):
         st.warning(f"Could not parse block as table: {err}")
         return pd.DataFrame()
 
+def find_difference_block(data):
+    for i, row in enumerate(data):
+        col1 = row[0] if len(row) > 0 else ""
+        if str(col1).strip().lower().startswith("difference ("):
+            header_row = i - 1
+            j = i + 1
+            while j < len(data):
+                rowj = data[j]
+                col1j = rowj[0] if len(rowj) > 0 else ""
+                if (str(col1j).strip() and not str(rowj[1]).strip()) or not any(str(cell).strip() for cell in rowj):
+                    break
+                j += 1
+            return {
+                "label": str(col1).strip(),
+                "start": i,
+                "header": header_row,
+                "data_start": i,
+                "data_end": j
+            }
+    return None
+
 def is_numeric_column(series):
     try:
         if series.dtype == object:
@@ -163,108 +183,97 @@ def get_value_columns(df):
                 cols.append(col)
     return cols
 
-def auto_analyze_and_plot(df, question=None, pie_key=None):
-    df = df.replace(['', None, 'nan', 'NaN'], pd.NA)
-    df = df.dropna(axis=1, how='all').dropna(axis=0, how='all')
-    st.write(f"**Question:** {question or ''}")
+def plot_line_chart(df, question=None):
+    # Only plot columns with numeric values and avoid difference rows
+    value_cols = get_value_columns(df)
+    if not value_cols:
+        st.info("No numeric data to plot.")
+        return
     category_col = None
     for col in df.columns:
-        if not is_numeric_column(df[col]):
+        if col not in value_cols:
             category_col = col
             break
     if category_col is None:
         category_col = df.columns[0]
+    plot_df = df[[category_col] + value_cols].copy()
+    # Convert to numeric
+    for col in value_cols:
+        plot_df[col] = pd.to_numeric(plot_df[col], errors="coerce")
+    plot_df = plot_df.dropna()
+    if plot_df.empty:
+        st.info("No valid data for line chart.")
+        return
+    st.subheader("Line Chart")
+    fig = px.line(plot_df, x=category_col, y=value_cols, markers=True,
+                  labels={"value": "Percentage", "variable": "Group", category_col: category_col},
+                  template="plotly_white", title=question)
+    fig.update_traces(mode="lines+markers")
+    fig.update_layout(legend_title_text='Group')
+    st.plotly_chart(fig, use_container_width=True)
+
+def plot_difference_bar(df, question=None):
     value_cols = get_value_columns(df)
-    cleaned_value_cols = []
+    if not value_cols:
+        st.info("No numeric data to plot difference.")
+        return
+    category_col = None
+    for col in df.columns:
+        if col not in value_cols:
+            category_col = col
+            break
+    if category_col is None:
+        category_col = df.columns[0]
+    plot_df = df[[category_col] + value_cols].copy()
     for col in value_cols:
-        s = df[col].str.replace('%', '', regex=False) if df[col].dtype == object else df[col]
-        s = pd.to_numeric(s, errors='coerce')
-        if s.fillna(0).sum() > 0:
-            cleaned_value_cols.append(col)
-    value_cols = cleaned_value_cols
-    for col in value_cols:
-        if df[col].dtype == object:
-            df[col] = df[col].str.replace('%', '', regex=False)
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-    if len(value_cols) == 1:
-        plot_df = df[[category_col, value_cols[0]]].copy()
-        plot_df[value_cols[0]] = pd.to_numeric(plot_df[value_cols[0]], errors="coerce")
-        plot_df = plot_df.dropna()
-        st.subheader("Bar Chart")
-        fig = px.bar(plot_df, x=category_col, y=value_cols[0], color=category_col, template="plotly_white")
-        st.plotly_chart(fig, use_container_width=True)
-        st.subheader("Pie Chart")
-        fig2 = px.pie(plot_df, names=category_col, values=value_cols[0], hole=0.4, template="seaborn")
-        st.plotly_chart(fig2, use_container_width=True)
-    elif len(value_cols) > 1:
-        plot_df = df[[category_col] + value_cols].copy()
-        for col in value_cols:
-            plot_df[col] = pd.to_numeric(plot_df[col], errors="coerce")
-        plot_df = plot_df.dropna()
-        st.markdown("### Survey Vote Share by Category (Stacked Bar)")
-        fig = px.bar(
-            plot_df, x=category_col, y=value_cols, text_auto='.1f',
-            labels={'value': 'Value', category_col: category_col, 'variable': 'Group'},
-            barmode='relative',
-        )
-        fig.update_layout(barmode='stack', xaxis_tickangle=-30, template="plotly_white")
-        st.plotly_chart(fig, use_container_width=True)
-        st.markdown("### Survey Vote Share by Group (Grouped Bar)")
-        melted = plot_df.melt(id_vars=[category_col], value_vars=value_cols, var_name='Group', value_name='Value')
-        fig2 = px.bar(
-            melted, x='Group', y='Value', color=category_col, barmode='group',
-        )
-        fig2.update_layout(template="seaborn")
-        st.plotly_chart(fig2, use_container_width=True)
-        row_options = plot_df[category_col].tolist()
-        unique_key = pie_key or f"pieview_{str(question)[:20].replace(' ','_')}"
-        row_option = st.selectbox("Show distribution for (Pie View)", row_options, key=unique_key)
-        pie_row = plot_df[plot_df[category_col] == row_option][value_cols].iloc[0]
-        st.markdown(f"### Distribution for {row_option}")
-        fig3 = px.pie(
-            names=value_cols, values=pie_row, title=f"Distribution in {row_option}", hole=0.4
-        )
-        st.plotly_chart(fig3, use_container_width=True)
-        if len(value_cols) > 1 and plot_df.shape[0] > 1:
-            st.subheader("Heatmap")
-            fig4 = px.imshow(
-                plot_df.set_index(category_col)[value_cols].T, aspect="auto",
-                color_continuous_scale="Blues", labels={'x': category_col, 'y': 'Group'}
-            )
-            st.plotly_chart(fig4, use_container_width=True)
-    elif len(df) == 1 and len(value_cols) > 0:
-        pie_row = df[value_cols].iloc[0].astype(float)
-        st.subheader("Pie Chart")
-        fig = px.pie(names=value_cols, values=pie_row.values, template="seaborn")
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("No valid numeric survey data to plot.")
+        plot_df[col] = pd.to_numeric(plot_df[col], errors="coerce")
+    plot_df = plot_df.dropna()
+    st.subheader("Difference Bar Chart")
+    fig = px.bar(plot_df, x=category_col, y=value_cols, barmode="group",
+                 labels={"value": "Difference", "variable": "Group", category_col: category_col},
+                 template="plotly_white", title=f"Difference: {question}")
+    st.plotly_chart(fig, use_container_width=True)
 
 def dataframe_to_pdf(df, title):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", "B", 14)
-    if len(title) > 60:
-        title_lines = [title[i:i+60] for i in range(0, len(title), 60)]
-        for tline in title_lines:
-            pdf.cell(0, 10, tline, ln=True, align="C")
+    # Title wrap
+    max_title_width = pdf.w - 2 * pdf.l_margin
+    title_lines = []
+    if pdf.get_string_width(title) < max_title_width:
+        title_lines = [title]
     else:
-        pdf.cell(0, 10, title, ln=True, align="C")
+        words = title.split(' ')
+        cur_line = ""
+        for word in words:
+            if pdf.get_string_width(cur_line + " " + word) <= max_title_width:
+                cur_line += " " + word
+            else:
+                title_lines.append(cur_line.strip())
+                cur_line = word
+        title_lines.append(cur_line.strip())
+    for tline in title_lines:
+        pdf.cell(0, 10, tline, ln=True, align="C")
     pdf.set_font("Arial", "B", 10)
     pdf.ln(4)
-    col_widths = [max(28, min(60, pdf.get_string_width(str(col)) + 6)) for col in df.columns]
-    row_height = pdf.font_size * 1.7
+    # Calculate column widths
+    col_widths = []
+    max_col_width = (pdf.w - 2 * pdf.l_margin) / len(df.columns)
+    for col in df.columns:
+        w = max(pdf.get_string_width(str(col)) + 6, max((pdf.get_string_width(str(val)) + 4 for val in df[col]), default=10))
+        col_widths.append(min(max(w, 28), max_col_width))
+    row_height = pdf.font_size * 1.5
+    # Header
     for col, w in zip(df.columns, col_widths):
-        pdf.cell(w, row_height, str(col), border=1, align='C')
+        pdf.multi_cell(w, row_height, str(col), border=1, align='C', ln=3, max_line_height=pdf.font_size)
     pdf.ln(row_height)
     pdf.set_font("Arial", "", 10)
-    for _, row in df.iterrows():
+    # Data rows
+    for idx, row in df.iterrows():
         for col, w in zip(df.columns, col_widths):
-            val = str(row[col])
-            if pdf.get_string_width(val) > w:
-                max_chars = int(w // (pdf.font_size * 0.6))
-                val = val[:max_chars-3] + "..." if max_chars > 3 else val[:max_chars]
-            pdf.cell(w, row_height, val, border=1, align='C')
+            val = str(row[col]) if not pd.isna(row[col]) else ""
+            pdf.multi_cell(w, row_height, val, border=1, align='C', ln=3, max_line_height=pdf.font_size)
         pdf.ln(row_height)
     pdf_bytes = pdf.output(dest='S').encode('latin1')
     return BytesIO(pdf_bytes)
@@ -288,16 +297,14 @@ if menu == "Set/Change Password":
     password_setup_form()
     st.stop()
 
-# --- Only runs if logged in and on Dashboard ---
 try:
     gc = get_gspread_client()
     all_sheets = [ws.title for ws in gc.open(SHEET_NAME).worksheets()]
     comparative_sheets = [title for title in all_sheets if is_comparative_sheet(title)]
-    # Extract question names from comparative sheet names:
     comparative_questions = []
     for cs in comparative_sheets:
         if cs.lower().startswith("comp_"):
-            # Try to extract a cleaner question name (after comp_, replace first _ with " - ", then others with space)
+            # Clean label: after comp_, replace first _ with " - ", others with space
             q = cs[5:]
             if "_" in q:
                 parts = q.split("_", 1)
@@ -316,7 +323,7 @@ if not comparative_sheets:
     st.warning("No comparative analysis sheets found.")
     st.stop()
 
-# ---- 1. Show Comparative Analysis (Question Selection) At Top ----
+# ---- 1. Comparative Analysis (Question Selection) ----
 st.header("Comparative Analysis")
 if not comparative_questions:
     st.warning("No comparative analysis questions found.")
@@ -327,11 +334,9 @@ else:
         question_labels,
         key="comparative_question_select"
     )
-    # Find corresponding tuple using label (not index)
     selected_q_label, selected_cs = next((q_label, cs) for q_label, cs in comparative_questions if q_label == selected_label)
     comp_data = load_pivot_data(gc, SHEET_NAME, selected_cs)
     blocks = find_cuts_and_blocks(comp_data)
-    # Find the "Overall" block
     overall_block = None
     for b in blocks:
         if "overall" in b["label"].lower():
@@ -339,17 +344,40 @@ else:
             break
     if not overall_block and blocks:
         overall_block = blocks[0]
+    st.markdown(f"#### Comparative Results: {selected_q_label}")
     if overall_block:
-        st.markdown(f"#### Comparative Results: {selected_q_label}")
         df = extract_block_df(comp_data, overall_block)
-        st.table(df.style.set_properties(**{'text-align': 'center'}).set_table_styles(
-            [{'selector': 'th', 'props': [('text-align', 'center')]}]
-        ))
-        auto_analyze_and_plot(df, overall_block["label"], pie_key=f"pie_overall_{selected_cs}")
+        # Center align and wrap text in table using CSS for Streamlit
+        st.markdown(
+            """
+            <style>
+            .css-1l02zno, .css-1d391kg, .css-1v0mbdj, .stDataFrame th, .stDataFrame td {
+                text-align: center !important;
+                white-space: pre-line !important;
+            }
+            </style>
+            """, unsafe_allow_html=True
+        )
+        st.dataframe(df.style.set_properties(**{
+            'text-align': 'center',
+            'white-space': 'pre-line'
+        }))
+        plot_line_chart(df, question=overall_block["label"])
     else:
         st.info("No 'Overall' cut found in comparative analysis sheet.")
 
-st.markdown("---")
+    # Plot difference block if exists
+    diff_block = find_difference_block(comp_data)
+    if diff_block:
+        diff_df = extract_block_df(comp_data, diff_block)
+        st.markdown("#### Difference")
+        st.dataframe(diff_df.style.set_properties(**{
+            'text-align': 'center',
+            'white-space': 'pre-line'
+        }))
+        plot_difference_bar(diff_df, question=diff_block["label"])
+
+st.markdown("""---""")
 
 # ---- 2. Month/Tab Deep Dive Dropdown ----
 tab1, tab2 = st.columns([2, 4])
@@ -360,7 +388,6 @@ with tab1:
         st.stop()
     selected_month = st.selectbox("Select Month to Deep Dive", pivot_months, key="month_select")
 
-# ---- 3. Show All Pivot Tables for Selected Month ----
 with tab2:
     matching_pivot_tabs = [tab for tab in all_sheets if tab.startswith(selected_month+"_") and not is_comparative_sheet(tab)]
     if not matching_pivot_tabs:
@@ -375,11 +402,21 @@ with tab2:
         block = next(b for b in blocks if b["label"] == selected_cut)
         df = extract_block_df(pivot_data, block)
         st.subheader(f"Data Table (Logged in as: {st.session_state['username']})")
-        st.table(df.style.set_properties(**{'text-align': 'center'}).set_table_styles(
-            [{'selector': 'th', 'props': [('text-align', 'center')]}]
-        ))
+        st.markdown(
+            """
+            <style>
+            .css-1l02zno, .css-1d391kg, .css-1v0mbdj, .stDataFrame th, .stDataFrame td {
+                text-align: center !important;
+                white-space: pre-line !important;
+            }
+            </style>
+            """, unsafe_allow_html=True
+        )
+        st.dataframe(df.style.set_properties(**{
+            'text-align': 'center',
+            'white-space': 'pre-line'
+        }))
         csv = df.to_csv(index=False).encode('utf-8')
         st.download_button("Download CSV", csv, f"{selected_cut}_{pivot_tab}.csv", "text/csv")
         pdf_file = dataframe_to_pdf(df, f"{selected_cut} ({pivot_tab})")
         st.download_button("Download PDF", pdf_file, f"{selected_cut}_{pivot_tab}.pdf", "application/pdf")
-        auto_analyze_and_plot(df, selected_cut, pie_key=f"pie_{pivot_tab}_{selected_cut}")
