@@ -246,7 +246,6 @@ def comparative_dashboard(gc):
         st.markdown("### Comparative Results")
         styled_df = df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
         st.dataframe(styled_df, height=min(400, 50 + 40 * len(df)))
-        # Could add plot here if desired
         csv = df.to_csv(index=False).encode('utf-8')
         st.download_button("Download CSV", csv, f"{selected_sheet}_comparative.csv", "text/csv")
         pdf_file = dataframe_to_pdf(df, f"Comparative Analysis - {selected_sheet}")
@@ -277,17 +276,25 @@ def individual_dashboard(gc):
             ]
         elif level.startswith("B."):
             report_level = "Region Wise"
-            cuts = ["Region-wise (Malabar/Non Malabar)", "Region + Religion-wise"]
+            cuts = [
+                "Region-wise (Malabar/Non Malabar)", "Region + Religion-wise",
+                "Regionwise", "Region Wise"
+            ]
         elif level.startswith("C."):
             report_level = "District Wise"
-            cuts = ["District-wise"]
+            cuts = [
+                "District-wise", "Districtwise", "District Wise"
+            ]
         else:
             report_level = "AC Wise"
-            cuts = ["AC-wise (Assembly Constituency)"]
+            cuts = [
+                "AC-wise (Assembly Constituency)", "ACwise", "AC Wise", "Assembly Constituency wise", "AC-wise"
+            ]
 
         selected_sheet = st.selectbox(f"Select Question Sheet", sheets)
         data = load_pivot_data(gc, SHEET_NAME, selected_sheet)
         blocks = find_cuts_and_blocks(data)
+        st.write("DEBUG: All cut labels found in this sheet:", [b["label"] for b in blocks])
         block_labels = [b["label"] for b in blocks if b["label"] in cuts]
         if not block_labels:
             st.warning(f"No {report_level} cuts found in this question. Available cuts: {', '.join([b['label'] for b in blocks])}")
