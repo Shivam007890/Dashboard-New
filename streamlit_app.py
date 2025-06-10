@@ -11,7 +11,7 @@ def inject_custom_css():
     }
     /* Sidebar vivid pink-purple gradient */
     section[data-testid="stSidebar"] {
-        background: linear-gradient(135deg, #ff9a9e 0%, #fad0c4 99%, #fad0c4 100%);
+        background: linear-gradient(135deg, #ff9a9e 0%, #fad0c4 100%);
     }
     /* Center main title with gradient text */
     .dashboard-title {
@@ -31,6 +31,7 @@ def inject_custom_css():
         justify-content: center;
         align-items: center;
         margin-bottom: 1.2em;
+        margin-top: 0.5em;
     }
     /* Card/section headers */
     .section-header {
@@ -42,6 +43,7 @@ def inject_custom_css():
         background-clip: text;
         margin-top: 1.6em;
         margin-bottom: 0.6em;
+        text-align: center;
     }
     /* Buttons */
     .stButton>button {
@@ -68,13 +70,17 @@ def main_dashboard():
     inject_custom_css()
     # Title centered
     st.markdown('<div class="dashboard-title">🤖 Kerala Survey Dashboard</div>', unsafe_allow_html=True)
-    # Kerala map centered below
+    # Kerala map centered below using HTML/CSS (never shifted!)
     map_path = "kerala_political_map.png"
     if os.path.exists(map_path):
-        st.markdown('<div class="center-map">', unsafe_allow_html=True)
-        st.image(map_path, width=320)
-        st.markdown('</div>', unsafe_allow_html=True)
-    # The rest of your dashboard options here
+        st.markdown(
+            f'''
+            <div class="center-map">
+                <img src="data:image/png;base64,{get_image_base64(map_path)}" width="320" alt="Kerala Map"/>
+            </div>
+            ''',
+            unsafe_allow_html=True
+        )
     st.markdown('<div class="section-header">Choose an Option</div>', unsafe_allow_html=True)
     choice = st.radio(
         "",
@@ -84,6 +90,13 @@ def main_dashboard():
         ]
     )
     # ...rest of your dashboard logic...
+
+def get_image_base64(img_path):
+    import base64
+    with open(img_path, "rb") as img_file:
+        img_bytes = img_file.read()
+    encoded = base64.b64encode(img_bytes).decode("utf-8")
+    return encoded
 
 if __name__ == "__main__":
     st.set_page_config(page_title="Kerala Survey Dashboard", layout="wide")
