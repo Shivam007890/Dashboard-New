@@ -74,7 +74,7 @@ def get_gspread_client():
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
-    credentials_json = os.getenv("GOOGLE_CREDENTIALS_JSON") or st.secrets["GOOGLE_CREDENTIALS_JSON"]
+    credentials_json = os.getenv("GOOGLE_CREDENTIALS_JSON") if "GOOGLE_CREDENTIALS_JSON" in os.environ else st.secrets["GOOGLE_CREDENTIALS_JSON"]
     credentials_dict = json.loads(credentials_json)
     with tempfile.NamedTemporaryFile(mode='w+', suffix='.json', delete=False) as temp_file:
         json.dump(credentials_dict, temp_file)
@@ -277,36 +277,10 @@ def individual_dashboard(gc):
     )
     try:
         all_sheets = [ws.title for ws in gc.open(SHEET_NAME).worksheets()]
-        st.write("All available sheets:", all_sheets)  # Debug: see available sheet names
-
-        # Extra robust patterns:
-        def ac_match(name):
-            name_l = name.lower()
-            return (
-                ("ac" in name_l and not name_l.startswith("comp_") and not "district" in name_l and not "region" in name_l)
-                or "constituency" in name_l
-            )
-
-        def district_match(name):
-            name_l = name.lower()
-            return "district" in name_l
-
-        def region_match(name):
-            name_l = name.lower()
-            return "region" in name_l
-
-        def statewide_match(name):
-            name_l = name.lower()
-            return (
-                "_" in name_l
-                and not region_match(name)
-                and not district_match(name)
-                and not ac_match(name)
-                and not name_l.startswith("comp_")
-            )
-
+        # ALL sheets are question sheets, do NOT filter by report type
+        sheets = all_sheets
+        
         if level.startswith("A."):
-            sheets = [s for s in all_sheets if statewide_match(s)]
             report_level = "Statewide"
             cuts = [
                 "Overall", "Gender-wise", "Age-wise", "Religion-wise", "Community-wise",
@@ -314,30 +288,21 @@ def individual_dashboard(gc):
                 "Community + Gender-wise", "Community + Religion-wise", "First-time Voters"
             ]
         elif level.startswith("B."):
-            sheets = [s for s in all_sheets if region_match(s)]
             report_level = "Region Wise"
             cuts = ["Region-wise (Malabar/Non Malabar)", "Region + Religion-wise"]
         elif level.startswith("C."):
-            sheets = [s for s in all_sheets if district_match(s)]
             report_level = "District Wise"
             cuts = ["District-wise"]
         else:
-            sheets = [s for s in all_sheets if ac_match(s)]
             report_level = "AC Wise"
             cuts = ["AC-wise (Assembly Constituency)"]
 
-        st.write(f"Sheets matched for {report_level}:", sheets)  # Debug: see matched sheets
-
-        if not sheets:
-            st.warning(f"No sheets found for {report_level} reports.")
-            return
-
-        selected_sheet = st.selectbox(f"Select {report_level} Sheet", sheets)
+        selected_sheet = st.selectbox(f"Select Question Sheet", sheets)
         data = load_pivot_data(gc, SHEET_NAME, selected_sheet)
         blocks = find_cuts_and_blocks(data)
         block_labels = [b["label"] for b in blocks if b["label"] in cuts]
         if not block_labels:
-            st.warning(f"No {report_level} cuts found in this sheet. Available cuts: {', '.join([b['label'] for b in blocks])}")
+            st.warning(f"No {report_level} cuts found in this question. Available cuts: {', '.join([b['label'] for b in blocks])}")
             return
         selected_block_label = st.selectbox("Select Block", block_labels)
         block = next(b for b in blocks if b["label"] == selected_block_label)
