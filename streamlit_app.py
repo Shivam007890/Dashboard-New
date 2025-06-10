@@ -154,7 +154,6 @@ def get_value_columns(df):
 
 def plot_comparative_line_chart(df):
     chart_df = df.copy()
-    # Remove the difference/diff rows
     chart_df = chart_df[~chart_df.iloc[:, 0].astype(str).str.lower().str.contains('difference')]
     for col in chart_df.columns[1:]:
         chart_df[col] = chart_df[col].astype(str).str.replace('%', '').astype(float)
@@ -189,7 +188,6 @@ def dataframe_to_pdf(df, title):
         w = max(pdf.get_string_width(str(col)) + 6, max((pdf.get_string_width(str(val)) + 4 for val in df[col]), default=10))
         col_widths.append(min(max(w, 28), max_col_width))
     row_height = pdf.font_size * 1.5
-    # Header row
     y_start = pdf.get_y()
     max_header_height = 0
     for col, w in zip(df.columns, col_widths):
@@ -200,7 +198,6 @@ def dataframe_to_pdf(df, title):
         pdf.set_xy(x_before + w, y_before)
     pdf.ln(max_header_height)
     pdf.set_font("Arial", "", 10)
-    # Data rows
     for idx, row in df.iterrows():
         x_left = pdf.l_margin
         y_top = pdf.get_y()
@@ -281,14 +278,16 @@ def individual_dashboard(gc):
     )
     try:
         all_sheets = [ws.title for ws in gc.open(SHEET_NAME).worksheets()]
-        # Assign cuts strictly as per user request
+        st.write("All available sheets:", all_sheets)  # Debug: see available sheet names
+
         if level.startswith("A."):
-            sheets = [s for s in all_sheets if
-                      "_" in s
-                      and not any(x in s.lower() for x in [
-                          "region", "district", "ac", "assembly constituency",
-                          "assembly_constituency", "comp"
-                      ])]
+            sheets = [
+                s for s in all_sheets if "_" in s and not any(
+                    x in s.lower() for x in [
+                        "region", "district", "ac", "constituency", "comp"
+                    ]
+                )
+            ]
             report_level = "Statewide"
             cuts = [
                 "Overall", "Gender-wise", "Age-wise", "Religion-wise", "Community-wise",
@@ -296,24 +295,20 @@ def individual_dashboard(gc):
                 "Community + Gender-wise", "Community + Religion-wise", "First-time Voters"
             ]
         elif level.startswith("B."):
-            region_patterns = ["region", "regionwise", "region wise", "region+religion", "region_report", "rgn"]
-            sheets = [s for s in all_sheets if any(x in s.lower() for x in region_patterns)]
+            sheets = [s for s in all_sheets if "region" in s.lower()]
             report_level = "Region Wise"
             cuts = ["Region-wise (Malabar/Non Malabar)", "Region + Religion-wise"]
         elif level.startswith("C."):
-            district_patterns = ["district", "districtwise", "district wise", "district_report", "dist"]
-            sheets = [s for s in all_sheets if any(x in s.lower() for x in district_patterns)]
+            sheets = [s for s in all_sheets if "district" in s.lower()]
             report_level = "District Wise"
             cuts = ["District-wise"]
         else:
-            ac_patterns = [
-                "ac-wise", "acwise", "assembly constituency", "assembly_constituency",
-                " ac ", "ac-", "ac_", "a/c", "ac report", "constituency", "acsurvey",
-                "acsurveyreport", "assemblyconstituency", "acwise report"
-            ]
-            sheets = [s for s in all_sheets if any(x in s.lower() for x in ac_patterns)]
+            # Robust matching for AC/constituency in any form
+            sheets = [s for s in all_sheets if ("ac" in s.lower() or "constituency" in s.lower())]
             report_level = "AC Wise"
             cuts = ["AC-wise (Assembly Constituency)"]
+
+        st.write(f"Sheets matched for {report_level}:", sheets)  # Debug: see matched sheets
 
         if not sheets:
             st.warning(f"No sheets found for {report_level} reports.")
