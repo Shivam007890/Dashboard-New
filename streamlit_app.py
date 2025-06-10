@@ -138,36 +138,6 @@ def extract_block_df(data, block):
         st.warning(f"Could not parse block as table: {err}")
         return pd.DataFrame()
 
-def find_difference_block(data):
-    for i, row in enumerate(data):
-        col1 = row[0] if len(row) > 0 else ""
-        if str(col1).strip().lower().startswith("difference ("):
-            header_row = i - 1
-            j = i + 1
-            while j < len(data):
-                rowj = data[j]
-                col1j = rowj[0] if len(rowj) > 0 else ""
-                if (str(col1j).strip() and not str(rowj[1]).strip()) or not any(str(cell).strip() for cell in rowj):
-                    break
-                j += 1
-            return {
-                "label": str(col1).strip(),
-                "start": i,
-                "header": header_row,
-                "data_start": i,
-                "data_end": j
-            }
-    return None
-
-def is_numeric_column(series):
-    try:
-        if series.dtype == object:
-            series = series.str.replace('%', '', regex=False)
-        pd.to_numeric(series.dropna())
-        return True
-    except Exception:
-        return False
-
 def get_value_columns(df):
     skip_keywords = ['sample', 'total', 'grand']
     cols = []
@@ -175,62 +145,23 @@ def get_value_columns(df):
         col_lc = col.strip().lower()
         if any(k in col_lc for k in skip_keywords):
             continue
-        if is_numeric_column(df[col]):
+        try:
+            pd.to_numeric(df[col].str.replace('%', '', regex=False), errors='raise')
             cols.append(col)
-    if not cols:
-        for col in df.columns:
-            if is_numeric_column(df[col]):
-                cols.append(col)
+        except Exception:
+            continue
     return cols
 
-def plot_line_chart(df, question=None):
-    value_cols = get_value_columns(df)
-    if not value_cols:
-        st.info("No numeric data to plot.")
-        return
-    category_col = None
-    for col in df.columns:
-        if col not in value_cols:
-            category_col = col
-            break
-    if category_col is None:
-        category_col = df.columns[0]
-    plot_df = df[[category_col] + value_cols].copy()
-    for col in value_cols:
-        plot_df[col] = pd.to_numeric(plot_df[col], errors="coerce")
-    plot_df = plot_df.dropna()
-    if plot_df.empty:
-        st.info("No valid data for line chart.")
-        return
-    st.subheader("Line Chart")
-    fig = px.line(plot_df, x=category_col, y=value_cols, markers=True,
-                  labels={"value": "Percentage", "variable": "Group", category_col: category_col},
-                  template="plotly_white", title=question)
-    fig.update_traces(mode="lines+markers")
-    fig.update_layout(legend_title_text='Group')
-    st.plotly_chart(fig, use_container_width=True)
-
-def plot_difference_bar(df, question=None):
-    value_cols = get_value_columns(df)
-    if not value_cols:
-        st.info("No numeric data to plot difference.")
-        return
-    category_col = None
-    for col in df.columns:
-        if col not in value_cols:
-            category_col = col
-            break
-    if category_col is None:
-        category_col = df.columns[0]
-    plot_df = df[[category_col] + value_cols].copy()
-    for col in value_cols:
-        plot_df[col] = pd.to_numeric(plot_df[col], errors="coerce")
-    plot_df = plot_df.dropna()
-    st.subheader("Difference Bar Chart")
-    fig = px.bar(plot_df, x=category_col, y=value_cols, barmode="group",
-                 labels={"value": "Difference", "variable": "Group", category_col: category_col},
-                 template="plotly_white", title=f"Difference: {question}")
-    st.plotly_chart(fig, use_container_width=True)
+def plot_comparative_line_chart(df):
+    # Exclude rows like "Difference" from line chart
+    chart_df = df.copy()
+    # Remove the difference/diff rows
+    chart_df = chart_df[~chart_df.iloc[:, 0].astype(str).str.lower().str.contains('difference')]
+    # Try to convert all result columns to float
+    for col in chart_df.columns[1:]:
+        chart_df[col] = chart_df[col].astype(str).str.replace('%', '').astype(float)
+    chart_df = chart_df.set_index(chart_df.columns[0])
+    st.line_chart(chart_df)
 
 def dataframe_to_pdf(df, title):
     pdf = FPDF()
@@ -281,7 +212,6 @@ def dataframe_to_pdf(df, title):
         for col, w in zip(df.columns, col_widths):
             pdf.set_xy(x_left, y_top)
             val = str(row[col]) if not pd.isna(row[col]) else ""
-            # Use split_only to calculate height
             n_lines = len(pdf.multi_cell(w, row_height, val, border=0, align='C', split_only=True))
             cell_height = n_lines * row_height
             cell_heights.append(cell_height)
@@ -297,140 +227,125 @@ def dataframe_to_pdf(df, title):
     pdf_bytes = pdf.output(dest='S').encode('latin1')
     return BytesIO(pdf_bytes)
 
-def is_comparative_sheet(sheet_name):
-    return sheet_name.lower().startswith("comp_") or sheet_name.lower().startswith("comparative analysis")
-
-# ------ APP MAIN ------
-st.set_page_config(page_title="Kerala Survey Dashboard", layout="wide")
-st.markdown("<h1 style='text-align: center; color: #0099ff;'>🤖 Kerala Survey Dashboard</h1>", unsafe_allow_html=True)
-
-if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
-if 'username' not in st.session_state: st.session_state['username'] = ""
-menu = st.sidebar.radio("Menu", ["Dashboard", "Set/Change Password"])
-
-if not st.session_state['logged_in'] and menu == "Dashboard":
-    login_form()
-    st.stop()
-
-if menu == "Set/Change Password":
-    password_setup_form()
-    st.stop()
-
-try:
-    gc = get_gspread_client()
-    all_sheets = [ws.title for ws in gc.open(SHEET_NAME).worksheets()]
-    comparative_sheets = [title for title in all_sheets if is_comparative_sheet(title)]
-    comparative_questions = []
-    for cs in comparative_sheets:
-        if cs.lower().startswith("comp_"):
-            q = cs[5:]
-            if "_" in q:
-                parts = q.split("_", 1)
-                q_label = parts[0].capitalize() + " - " + parts[1].replace("_", " ")
-            else:
-                q_label = q.capitalize()
-            comparative_questions.append((q_label, cs))
-        else:
-            comparative_questions.append((cs, cs))
-    pivot_months = sorted(list(set(tab.split('_')[0] for tab in all_sheets if "_" in tab and not is_comparative_sheet(tab))))
-except Exception as e:
-    st.error(f"Could not connect to Google Sheet: {e}")
-    st.stop()
-
-if not comparative_sheets:
-    st.warning("No comparative analysis sheets found.")
-    st.stop()
-
-st.header("Comparative Analysis")
-if not comparative_questions:
-    st.warning("No comparative analysis questions found.")
-else:
-    question_labels = [q for q, cs in comparative_questions]
-    selected_label = st.selectbox(
-        "Select Question for Comparative Analysis",
-        question_labels,
-        key="comparative_question_select"
+def main_dashboard(gc):
+    st.markdown("<h1 style='text-align: center; color: #0099ff;'>🤖 Kerala Survey Dashboard</h1>", unsafe_allow_html=True)
+    choice = st.radio(
+        "What would you like to see?",
+        [
+            "Comparative Analysis Over Different Surveys",
+            "Individual Survey Reports"
+        ]
     )
-    selected_q_label, selected_cs = next((q_label, cs) for q_label, cs in comparative_questions if q_label == selected_label)
-    comp_data = load_pivot_data(gc, SHEET_NAME, selected_cs)
-    blocks = find_cuts_and_blocks(comp_data)
-    overall_block = None
-    for b in blocks:
-        if "overall" in b["label"].lower():
-            overall_block = b
-            break
-    if not overall_block and blocks:
-        overall_block = blocks[0]
-    st.markdown(f"#### Comparative Results: {selected_q_label}")
-    if overall_block is not None:
-        df = extract_block_df(comp_data, overall_block)
-        st.markdown(
-            """
-            <style>
-            .css-1l02zno, .css-1d391kg, .css-1v0mbdj, .stDataFrame th, .stDataFrame td {
-                text-align: center !important;
-                white-space: pre-line !important;
-            }
-            </style>
-            """, unsafe_allow_html=True
-        )
-        st.dataframe(df.style.set_properties(**{
-            'text-align': 'center',
-            'white-space': 'pre-line'
-        }))
-        plot_line_chart(df, question=overall_block["label"])
-    else:
-        st.info("No 'Overall' cut found in comparative analysis sheet.")
 
-    diff_block = find_difference_block(comp_data)
-    if diff_block:
-        diff_df = extract_block_df(comp_data, diff_block)
-        st.markdown("#### Difference")
-        st.dataframe(diff_df.style.set_properties(**{
-            'text-align': 'center',
-            'white-space': 'pre-line'
-        }))
-        plot_difference_bar(diff_df, question=diff_block["label"])
+    if choice == "Comparative Analysis Over Different Surveys":
+        comparative_dashboard(gc)
+    elif choice == "Individual Survey Reports":
+        individual_dashboard(gc)
 
-st.markdown("""---""")
-
-tab1, tab2 = st.columns([2, 4])
-with tab1:
-    st.header("Deep Dive by Month")
-    if not pivot_months:
-        st.warning("No monthly survey sheets found.")
-        st.stop()
-    selected_month = st.selectbox("Select Month to Deep Dive", pivot_months, key="month_select")
-
-with tab2:
-    matching_pivot_tabs = [tab for tab in all_sheets if tab.startswith(selected_month+"_") and not is_comparative_sheet(tab)]
-    if not matching_pivot_tabs:
-        st.warning(f"No pivot tables found for {selected_month}.")
-    else:
-        st.header(f"Pivot Tables for {selected_month}")
-        pivot_tab = st.selectbox("Select Pivot Table (Question)", matching_pivot_tabs, key="pivot_tab")
-        pivot_data = load_pivot_data(gc, SHEET_NAME, pivot_tab)
-        blocks = find_cuts_and_blocks(pivot_data)
-        cut_labels = [b["label"] for b in blocks]
-        selected_cut = st.selectbox("Select a Cut/Crosstab", cut_labels, key=f"cut_{pivot_tab}")
-        block = next(b for b in blocks if b["label"] == selected_cut)
-        df = extract_block_df(pivot_data, block)
-        st.subheader(f"Data Table (Logged in as: {st.session_state['username']})")
-        st.markdown(
-            """
-            <style>
-            .css-1l02zno, .css-1d391kg, .css-1v0mbdj, .stDataFrame th, .stDataFrame td {
-                text-align: center !important;
-                white-space: pre-line !important;
-            }
-            </style>
-            """, unsafe_allow_html=True
-        )
-        st.dataframe(df.style.set_properties(**{
-            'text-align': 'center',
-            'white-space': 'pre-line'
-        }))
+def comparative_dashboard(gc):
+    try:
+        all_sheets = [ws.title for ws in gc.open(SHEET_NAME).worksheets()]
+        comparative_sheets = [title for title in all_sheets if title.lower().startswith("comp_") or title.lower().startswith("comparative analysis")]
+        if not comparative_sheets:
+            st.warning("No comparative analysis sheets found.")
+            return
+        # List questions/analyses available
+        question_labels = [s.replace("comp_", "").replace("_", " ", 1).replace("_", " ") if s.lower().startswith("comp_") else s for s in comparative_sheets]
+        selected_idx = st.selectbox("Select Question for Comparative Analysis", list(range(len(question_labels))), format_func=lambda i: question_labels[i])
+        selected_sheet = comparative_sheets[selected_idx]
+        data = load_pivot_data(gc, SHEET_NAME, selected_sheet)
+        # Find block with multiple periods
+        blocks = find_cuts_and_blocks(data)
+        if not blocks:
+            st.warning("No data blocks found in this sheet.")
+            return
+        block = blocks[0]
+        df = extract_block_df(data, block)
+        # Clean up: ensure columns are unique, convert numeric columns
+        st.markdown("### Comparative Results")
+        styled_df = df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
+        st.dataframe(styled_df, height=min(400, 50 + 40 * len(df)))
+        # Show line chart for periods (excluding difference/diff rows)
+        plot_comparative_line_chart(df)
+        # Download buttons
         csv = df.to_csv(index=False).encode('utf-8')
-        st.download_button("Download CSV", csv, f"{selected_cut}_{pivot_tab}.csv", "text/csv")
-        pdf_file = dataframe_to_pdf(df, f"{selected_cut} ({pivot_tab})")
-        st.download_button("Download PDF", pdf_file, f"{selected_cut}_{pivot_tab}.pdf", "application/pdf")
+        st.download_button("Download CSV", csv, f"{selected_sheet}_comparative.csv", "text/csv")
+        pdf_file = dataframe_to_pdf(df, f"Comparative Analysis - {selected_sheet}")
+        st.download_button("Download PDF", pdf_file, f"{selected_sheet}_comparative.pdf", "application/pdf")
+    except Exception as e:
+        st.error(f"Could not load comparative analysis: {e}")
+
+def individual_dashboard(gc):
+    st.header("Individual Survey Reports")
+    level = st.radio(
+        "Select Report Level",
+        [
+            "A. Individual State Wide Survey Reports",
+            "B. Region Wise Survey Reports",
+            "C. District Wise Survey Reports",
+            "D. AC Wise Survey Reports"
+        ]
+    )
+    # List sheets by pattern, e.g. for State Wide: those that do not contain region/district/ac
+    try:
+        all_sheets = [ws.title for ws in gc.open(SHEET_NAME).worksheets()]
+        if level.startswith("A."):
+            sheets = [s for s in all_sheets if "_" in s and not any(x in s.lower() for x in ["region", "district", "ac", "comp"])]
+            report_level = "Statewide"
+        elif level.startswith("B."):
+            sheets = [s for s in all_sheets if "region" in s.lower()]
+            report_level = "Region Wise"
+        elif level.startswith("C."):
+            sheets = [s for s in all_sheets if "district" in s.lower()]
+            report_level = "District Wise"
+        else:
+            sheets = [s for s in all_sheets if "ac" in s.lower()]
+            report_level = "AC Wise"
+        if not sheets:
+            st.warning(f"No sheets found for {report_level} reports.")
+            return
+        selected_sheet = st.selectbox(f"Select {report_level} Sheet", sheets)
+        data = load_pivot_data(gc, SHEET_NAME, selected_sheet)
+        blocks = find_cuts_and_blocks(data)
+        if not blocks:
+            st.warning("No data blocks found in this sheet.")
+            return
+        block_labels = [b["label"] for b in blocks]
+        selected_block_label = st.selectbox("Select Block", block_labels)
+        block = next(b for b in blocks if b["label"] == selected_block_label)
+        df = extract_block_df(data, block)
+        st.markdown(f"### Data Table: {selected_sheet} - {selected_block_label}")
+        styled_df = df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
+        st.dataframe(styled_df, height=min(400, 50 + 40 * len(df)))
+        # Show bar chart for main question
+        value_cols = get_value_columns(df)
+        if value_cols:
+            try:
+                chart_df = df.copy()
+                for col in value_cols:
+                    chart_df[col] = chart_df[col].astype(str).str.replace('%', '').astype(float)
+                st.bar_chart(chart_df[value_cols])
+            except Exception:
+                pass
+        # Download buttons
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.download_button("Download CSV", csv, f"{selected_sheet}_{selected_block_label}.csv", "text/csv")
+        pdf_file = dataframe_to_pdf(df, f"{selected_sheet} - {selected_block_label}")
+        st.download_button("Download PDF", pdf_file, f"{selected_sheet}_{selected_block_label}.pdf", "application/pdf")
+    except Exception as e:
+        st.error(f"Could not load individual survey report: {e}")
+
+# --- Main logic ---
+if __name__ == "__main__":
+    st.set_page_config(page_title="Kerala Survey Dashboard", layout="wide")
+    if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
+    if 'username' not in st.session_state: st.session_state['username'] = ""
+    sidebar_menu = st.sidebar.radio("Menu", ["Dashboard", "Set/Change Password"])
+    if not st.session_state['logged_in'] and sidebar_menu == "Dashboard":
+        login_form()
+        st.stop()
+    if sidebar_menu == "Set/Change Password":
+        password_setup_form()
+        st.stop()
+    gc = get_gspread_client()
+    main_dashboard(gc)
