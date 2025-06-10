@@ -153,7 +153,6 @@ def get_value_columns(df):
     return cols
 
 def plot_comparative_line_chart(df):
-    # Exclude rows like "Difference" from line chart
     chart_df = df.copy()
     # Remove the difference/diff rows
     chart_df = chart_df[~chart_df.iloc[:, 0].astype(str).str.lower().str.contains('difference')]
@@ -286,11 +285,10 @@ def individual_dashboard(gc):
             "D. AC Wise Survey Reports"
         ]
     )
-    # List sheets by pattern, e.g. for State Wide: those that do not contain region/district/ac
     try:
         all_sheets = [ws.title for ws in gc.open(SHEET_NAME).worksheets()]
         if level.startswith("A."):
-            sheets = [s for s in all_sheets if "_" in s and not any(x in s.lower() for x in ["region", "district", "ac", "comp"])]
+            sheets = [s for s in all_sheets if "_" in s and not any(x in s.lower() for x in ["region", "district", "ac", "assembly constituency", "assembly_constituency", "comp"])]
             report_level = "Statewide"
         elif level.startswith("B."):
             sheets = [s for s in all_sheets if "region" in s.lower()]
@@ -299,7 +297,22 @@ def individual_dashboard(gc):
             sheets = [s for s in all_sheets if "district" in s.lower()]
             report_level = "District Wise"
         else:
-            sheets = [s for s in all_sheets if "ac" in s.lower()]
+            # Robust AC Wise match: match any of these patterns
+            sheets = [
+                s for s in all_sheets
+                if any(
+                    x in s.lower()
+                    for x in [
+                        "assembly constituency",
+                        "assembly_constituency",
+                        " ac ",
+                        "ac-",
+                        "ac_",
+                        "acwise",
+                        "ac wise"
+                    ]
+                )
+            ]
             report_level = "AC Wise"
         if not sheets:
             st.warning(f"No sheets found for {report_level} reports.")
@@ -335,7 +348,6 @@ def individual_dashboard(gc):
     except Exception as e:
         st.error(f"Could not load individual survey report: {e}")
 
-# --- Main logic ---
 if __name__ == "__main__":
     st.set_page_config(page_title="Kerala Survey Dashboard", layout="wide")
     if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
