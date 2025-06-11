@@ -336,30 +336,26 @@ def plot_horizontal_bar_plotly(df):
         fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     st.plotly_chart(fig, use_container_width=True)
 
-def is_question_sheet(name, worksheet):
-    """
-    Only include visible (not hidden) sheets that look like question sheets:
-    """
-    name_lower = name.strip().lower()
-    # Exclude if hidden
-    try:
-        if hasattr(worksheet, 'hidden') and worksheet.hidden:
+def is_question_sheet(ws):
+    name = ws.title.strip().lower()
+    # Exclude hidden sheets (if property exists)
+    if hasattr(ws, 'hidden') and ws.hidden:
+        return False
+    # Exclude by keywords/prefixes
+    excluded_prefixes = [
+        'comp_', 'comparative analysis', 'summary', 'dashboard',
+        'meta', 'info', '_'
+    ]
+    for prefix in excluded_prefixes:
+        if name.startswith(prefix):
             return False
-    except Exception:
-        pass
-    # Exclude by prefix/type
-    excluded = any([
-        name_lower.startswith(prefix)
-        for prefix in [
-            'comp_', 'comparative analysis', 'summary', 'dashboard', 'meta', 'info', '_'
-        ]
-    ])
-    looks_like_q = (
-        bool(re.search(r'\bq\d+\b', name_lower)) or
-        "question" in name_lower or
-        bool(re.match(r'^\d', name_lower))
-    )
-    return (not excluded) and looks_like_q
+    # Exclude sheets with names like "Sheet1", "Instructions", etc.
+    auto_exclude = ['sheet', 'instruction', 'data', 'test']
+    for word in auto_exclude:
+        if word in name and len(name) <= len(word) + 2:
+            return False
+    # All other sheets are considered question sheets
+    return True
 
 def main_dashboard(gc):
     inject_custom_css()
@@ -430,7 +426,7 @@ def individual_dashboard(gc):
     )
     try:
         all_ws = gc.open(SHEET_NAME).worksheets()
-        question_sheets = [ws.title for ws in all_ws if is_question_sheet(ws.title, ws)]
+        question_sheets = [ws.title for ws in all_ws if is_question_sheet(ws)]
         if not question_sheets:
             st.warning("No question sheets found.")
             return
