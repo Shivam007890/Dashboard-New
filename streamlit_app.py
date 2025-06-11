@@ -382,7 +382,6 @@ def main_dashboard(gc):
 def comparative_dashboard(gc):
     try:
         all_sheets = [ws.title for ws in gc.open(SHEET_NAME).worksheets()]
-        # Now, Comparative tabs have the format "Comp_<question_text>" (not truncated)
         comparative_sheets = [title for title in all_sheets if title.lower().startswith("comp_") or title.lower().startswith("comparative analysis")]
         if not comparative_sheets:
             st.warning("No comparative analysis sheets found.")
@@ -436,21 +435,16 @@ def individual_dashboard(gc):
         blocks = find_cuts_and_blocks(data)
         all_labels = [b["label"] for b in blocks]
 
-        if level.startswith("A."):
-            report_level = "Statewide"
-            block_labels = [l for l in all_labels if l.startswith("State ")]
-        elif level.startswith("B."):
-            report_level = "Region Wise"
-            block_labels = [l for l in all_labels if l.startswith("Region ")]
-        elif level.startswith("C."):
-            report_level = "District Wise"
-            block_labels = [l for l in all_labels if l.startswith("District ")]
-        else:
-            report_level = "AC Wise"
-            block_labels = [l for l in all_labels if l.startswith("AC ") or "Assembly Constituency" in l]
-
+        section_lookup = {
+            "A. Individual State Wide Survey Reports": "State",
+            "B. Region Wise Survey Reports": "Region",
+            "C. District Wise Survey Reports": "District",
+            "D. AC Wise Survey Reports": "AC",
+        }
+        selected_prefix = section_lookup.get(level, "State")
+        block_labels = [l for l in all_labels if l.startswith(selected_prefix)]
         if not block_labels:
-            st.warning(f"No {report_level} cuts found in this question. Available cuts: {', '.join(all_labels)}")
+            st.warning(f"No {level} cuts found in this question. Available cuts: {', '.join(all_labels)}")
             return
 
         for block_label in block_labels:
