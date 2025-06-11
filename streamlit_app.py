@@ -474,8 +474,14 @@ def individual_dashboard(gc):
                 else:
                     st.warning(f"No cuts available for {display_name}.")
 
-        # Filtered section for each Region/Zone/District/AC
-        for prefix, label in [("Region", "Region-wise"), ("Zone", "Zone-wise"), ("District", "District-wise"), ("AC", "AC-wise")]:
+        # Filtered section for each State/Region/Zone/District/AC
+        for prefix, label in [
+            ("State", "State-wise"),
+            ("Region", "Region-wise"),
+            ("Zone", "Zone-wise"),
+            ("District", "District-wise"),
+            ("AC", "AC-wise")
+        ]:
             section_blocks = [l for l in all_labels if l.startswith(prefix + " ")]
             if section_blocks:
                 unique_names = sorted(set(" ".join(l.split()[:2]) for l in section_blocks))
