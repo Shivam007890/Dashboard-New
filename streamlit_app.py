@@ -394,7 +394,7 @@ def comparative_dashboard(gc):
             st.warning("No comparative analysis sheets found.")
             return
 
-        # Sort comparative_sheets by month
+        # Sort comparative_sheets by month (ensure correct order for difference row)
         sorted_sheets = sorted(comparative_sheets, key=extract_month_number)
         def clean_comp_name(s):
             if s.lower().startswith("comp_"):
@@ -425,23 +425,13 @@ def comparative_dashboard(gc):
 
 def individual_dashboard(gc):
     st.markdown('<div class="section-header">Individual Survey Reports</div>', unsafe_allow_html=True)
-    level = st.radio(
-        "Select Report Level",
-        [
-            "A. Individual State Wide Survey Reports",
-            "B. Region Wise Survey Reports",
-            "C. District Wise Survey Reports",
-            "D. Zone Wise Survey Reports",
-            "E. AC Wise Survey Reports"
-        ]
-    )
-    section_lookup = {
-        "A. Individual State Wide Survey Reports": "State",
-        "B. Region Wise Survey Reports": "Region",
-        "C. District Wise Survey Reports": "District",
-        "D. Zone Wise Survey Reports": "Zone",
-        "E. AC Wise Survey Reports": "AC"
-    }
+    all_levels = [
+        ("State", "A. Individual State Wide Survey Reports"),
+        ("Region", "B. Region Wise Survey Reports"),
+        ("Zone", "C. Zone Wise Survey Reports"),
+        ("District", "D. District Wise Survey Reports"),
+        ("AC", "E. AC Wise Survey Reports"),
+    ]
     try:
         all_ws = gc.open(SHEET_NAME).worksheets()
         question_sheets = [ws.title for ws in all_ws if is_question_sheet(ws)]
@@ -453,26 +443,28 @@ def individual_dashboard(gc):
         blocks = find_cuts_and_blocks(data)
         all_labels = [b["label"] for b in blocks]
 
-        selected_prefix = section_lookup.get(level, "State")
-        block_labels = [l for l in all_labels if l.startswith(selected_prefix+" ")]
-        if not block_labels:
-            st.warning(f"No {level} cuts found in this question. Available cuts: {', '.join(all_labels)}")
-            return
-
-        # Show all available cuts for the selected section in a dropdown
-        selected_cut = st.selectbox(f"Select Cut for {selected_prefix} Level", block_labels)
-        block = next(b for b in blocks if b["label"] == selected_cut)
-        df = extract_block_df(data, block)
-        st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_cut}</h4>', unsafe_allow_html=True)
-        styled_df = df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
-        st.dataframe(styled_df, height=min(400, 50 + 40 * len(df)))
-        st.markdown('</div>', unsafe_allow_html=True)
-        plot_horizontal_bar_plotly(df)
-        csv = df.to_csv(index=False).encode('utf-8')
-        st.download_button(f"Download CSV ({selected_cut})", csv, f"{selected_sheet}_{selected_cut}.csv", "text/csv")
-        pdf_file = dataframe_to_pdf(df, f"{selected_sheet} - {selected_cut}")
-        st.download_button(f"Download PDF ({selected_cut})", pdf_file, f"{selected_sheet}_{selected_cut}.pdf", "application/pdf")
-        st.markdown("---")
+        for prefix, display_name in all_levels:
+            block_labels = [l for l in all_labels if l.startswith(prefix+" ")]
+            if not block_labels:
+                continue  # Skip section if there are no blocks for it
+            with st.expander(f"{display_name} ({prefix})", expanded=True if prefix == "State" else False):
+                selected_cut = st.selectbox(
+                    f"Select Cut for {display_name}",
+                    block_labels,
+                    key=f"{prefix}_cut_select"
+                )
+                block = next(b for b in blocks if b["label"] == selected_cut)
+                df = extract_block_df(data, block)
+                st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_cut}</h4>', unsafe_allow_html=True)
+                styled_df = df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
+                st.dataframe(styled_df, height=min(400, 50 + 40 * len(df)))
+                st.markdown('</div>', unsafe_allow_html=True)
+                plot_horizontal_bar_plotly(df)
+                csv = df.to_csv(index=False).encode('utf-8')
+                st.download_button(f"Download CSV ({selected_cut})", csv, f"{selected_sheet}_{selected_cut}.csv", "text/csv", key=f"csv_{prefix}")
+                pdf_file = dataframe_to_pdf(df, f"{selected_sheet} - {selected_cut}")
+                st.download_button(f"Download PDF ({selected_cut})", pdf_file, f"{selected_sheet}_{selected_cut}.pdf", "application/pdf", key=f"pdf_{prefix}")
+                st.markdown("---")
     except Exception as e:
         st.error(f"Could not load individual survey report: {e}")
 
