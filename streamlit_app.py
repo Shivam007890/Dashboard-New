@@ -295,7 +295,7 @@ def plot_horizontal_bar_plotly(df):
     df = df[~df[label_col].astype(str).str.lower().str.contains('difference')]
     exclude_keywords = ['sample', 'total', 'grand']
     value_cols = [col for col in df.columns[1:] if not any(k in col.strip().lower() for k in exclude_keywords)]
-    blue_scale = ["#f7fbff", "#c6dbef", "#6aaed6", "#2070b4", "#08306b"]  # your custom gradient
+    blue_scale = ["#f7fbff", "#c6dbef", "#6aaed6", "#2070b4", "#08306b"]
     n_bars = df.shape[0] if len(value_cols) == 1 else len(value_cols)
     colors = blue_scale * ((n_bars // len(blue_scale)) + 1)
     for col in value_cols:
@@ -338,10 +338,8 @@ def plot_horizontal_bar_plotly(df):
 
 def is_question_sheet(ws):
     name = ws.title.strip().lower()
-    # Exclude hidden sheets (if property exists)
     if hasattr(ws, 'hidden') and ws.hidden:
         return False
-    # Exclude by keywords/prefixes
     excluded_prefixes = [
         'comp_', 'comparative analysis', 'summary', 'dashboard',
         'meta', 'info', '_'
@@ -349,12 +347,10 @@ def is_question_sheet(ws):
     for prefix in excluded_prefixes:
         if name.startswith(prefix):
             return False
-    # Exclude sheets with names like "Sheet1", "Instructions", etc.
     auto_exclude = ['sheet', 'instruction', 'data', 'test']
     for word in auto_exclude:
         if word in name and len(name) <= len(word) + 2:
             return False
-    # All other sheets are considered question sheets
     return True
 
 def main_dashboard(gc):
@@ -386,11 +382,17 @@ def main_dashboard(gc):
 def comparative_dashboard(gc):
     try:
         all_sheets = [ws.title for ws in gc.open(SHEET_NAME).worksheets()]
+        # Now, Comparative tabs have the format "Comp_<question_text>" (not truncated)
         comparative_sheets = [title for title in all_sheets if title.lower().startswith("comp_") or title.lower().startswith("comparative analysis")]
         if not comparative_sheets:
             st.warning("No comparative analysis sheets found.")
             return
-        question_labels = [s.replace("comp_", "").replace("_", " ", 1).replace("_", " ") if s.lower().startswith("comp_") else s for s in comparative_sheets]
+        # Show the full question text (after "Comp_")
+        def clean_comp_name(s):
+            if s.lower().startswith("comp_"):
+                return s[5:].replace("_", " ", 1)
+            return s
+        question_labels = [clean_comp_name(s) for s in comparative_sheets]
         selected_idx = st.selectbox("Select Question for Comparative Analysis", list(range(len(question_labels))), format_func=lambda i: question_labels[i])
         selected_sheet = comparative_sheets[selected_idx]
         data = load_pivot_data(gc, SHEET_NAME, selected_sheet)
@@ -435,7 +437,6 @@ def individual_dashboard(gc):
         blocks = find_cuts_and_blocks(data)
         all_labels = [b["label"] for b in blocks]
 
-        # Define cuts for each report level, and always include region-wise for Statewide
         if level.startswith("A."):
             report_level = "Statewide"
             cuts = [
@@ -466,7 +467,6 @@ def individual_dashboard(gc):
             st.warning(f"No {report_level} cuts found in this question. Available cuts: {', '.join(all_labels)}")
             return
 
-        # For Statewide (A), show all cuts (including Region-wise) as separate tables/graphs in order
         if level.startswith("A."):
             for block_label in block_labels:
                 block = next(b for b in blocks if b["label"] == block_label)
@@ -485,8 +485,6 @@ def individual_dashboard(gc):
             selected_block_label = st.selectbox("Select Block", block_labels)
             block = next(b for b in blocks if b["label"] == selected_block_label)
             df = extract_block_df(data, block)
-
-            # Drill down for Region/District/AC
             if (
                 level.startswith("B.")
                 or level.startswith("C.")
