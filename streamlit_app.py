@@ -9,7 +9,6 @@ import json
 import tempfile
 import plotly.express as px
 import base64
-import re
 
 SHEET_NAME = "Kerala Weekly Survey Automation Dashboard Test Run"
 
@@ -353,6 +352,14 @@ def is_question_sheet(ws):
             return False
     return True
 
+def extract_month_number(tab_name):
+    months = ["january","february","march","april","may","june","july","august","september","october","november","december"]
+    tab = tab_name.lower()
+    for i, m in enumerate(months):
+        if m in tab:
+            return i+1
+    return -1 # not found
+
 def main_dashboard(gc):
     inject_custom_css()
     st.markdown('<div class="dashboard-title">🤖 Kerala Survey Dashboard</div>', unsafe_allow_html=True)
@@ -386,13 +393,16 @@ def comparative_dashboard(gc):
         if not comparative_sheets:
             st.warning("No comparative analysis sheets found.")
             return
+
+        # Sort comparative_sheets by month
+        sorted_sheets = sorted(comparative_sheets, key=extract_month_number)
         def clean_comp_name(s):
             if s.lower().startswith("comp_"):
                 return s[5:]
             return s
-        question_labels = [clean_comp_name(s) for s in comparative_sheets]
+        question_labels = [clean_comp_name(s) for s in sorted_sheets]
         selected_idx = st.selectbox("Select Question for Comparative Analysis", list(range(len(question_labels))), format_func=lambda i: question_labels[i])
-        selected_sheet = comparative_sheets[selected_idx]
+        selected_sheet = sorted_sheets[selected_idx]
         data = load_pivot_data(gc, SHEET_NAME, selected_sheet)
         blocks = find_cuts_and_blocks(data)
         if not blocks:
@@ -421,7 +431,8 @@ def individual_dashboard(gc):
             "A. Individual State Wide Survey Reports",
             "B. Region Wise Survey Reports",
             "C. District Wise Survey Reports",
-            "D. AC Wise Survey Reports"
+            "D. Zone Wise Survey Reports",
+            "E. AC Wise Survey Reports"
         ]
     )
     try:
@@ -439,10 +450,12 @@ def individual_dashboard(gc):
             "A. Individual State Wide Survey Reports": "State",
             "B. Region Wise Survey Reports": "Region",
             "C. District Wise Survey Reports": "District",
-            "D. AC Wise Survey Reports": "AC",
+            "D. Zone Wise Survey Reports": "Zone",
+            "E. AC Wise Survey Reports": "AC"
         }
         selected_prefix = section_lookup.get(level, "State")
-        block_labels = [l for l in all_labels if l.startswith(selected_prefix)]
+        # Show ALL blocks that start with the selected_prefix and a space (to avoid partial matches)
+        block_labels = [l for l in all_labels if l.startswith(selected_prefix+" ")]
         if not block_labels:
             st.warning(f"No {level} cuts found in this question. Available cuts: {', '.join(all_labels)}")
             return
