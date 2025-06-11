@@ -18,6 +18,48 @@ USERS = {
     "analyst": "analyst2024"
 }
 
+def login_form():
+    st.markdown("<h2 style='text-align: center;'>Login</h2>", unsafe_allow_html=True)
+    with st.form("Login", clear_on_submit=False):
+        username = st.text_input("Login ID")
+        password = st.text_input("Password", type="password")
+        submit = st.form_submit_button("Login")
+        if submit:
+            if username in USERS and USERS[username] == password:
+                st.success("Login successful!")
+                st.session_state['logged_in'] = True
+                st.session_state['username'] = username
+                return True
+            else:
+                st.error("Invalid Login ID or Password.")
+                st.session_state['logged_in'] = False
+    return False
+
+def password_setup_form():
+    st.markdown("<h2 style='text-align: center;'>Set/Change Password</h2>", unsafe_allow_html=True)
+    with st.form("PasswordSetup", clear_on_submit=False):
+        username = st.text_input("Login ID", key="psu")
+        old_password = st.text_input("Current Password", type="password", key="psopw")
+        new_password = st.text_input("New Password", type="password", key="psnpw")
+        confirm_password = st.text_input("Confirm New Password", type="password", key="psc")
+        submit = st.form_submit_button("Set/Change Password")
+        if submit:
+            if username not in USERS:
+                st.error("User does not exist.")
+            elif USERS[username] != old_password:
+                st.error("Current password incorrect.")
+            elif new_password != confirm_password:
+                st.error("New passwords do not match.")
+            elif not new_password:
+                st.error("New password cannot be empty.")
+            else:
+                USERS[username] = new_password
+                st.success("Password updated successfully! Please login again.")
+                st.session_state['logged_in'] = False
+                st.session_state['username'] = ""
+                return True
+    return False
+
 def inject_custom_css():
     st.markdown("""
     <style>
@@ -92,48 +134,6 @@ def get_image_base64(img_path):
         img_bytes = img_file.read()
     encoded = base64.b64encode(img_bytes).decode("utf-8")
     return encoded
-
-def login_form():
-    st.markdown("<h2 style='text-align: center;'>Login</h2>", unsafe_allow_html=True)
-    with st.form("Login", clear_on_submit=False):
-        username = st.text_input("Login ID")
-        password = st.text_input("Password", type="password")
-        submit = st.form_submit_button("Login")
-        if submit:
-            if username in USERS and USERS[username] == password:
-                st.success("Login successful!")
-                st.session_state['logged_in'] = True
-                st.session_state['username'] = username
-                return True
-            else:
-                st.error("Invalid Login ID or Password.")
-                st.session_state['logged_in'] = False
-    return False
-
-def password_setup_form():
-    st.markdown("<h2 style='text-align: center;'>Set/Change Password</h2>", unsafe_allow_html=True)
-    with st.form("PasswordSetup", clear_on_submit=False):
-        username = st.text_input("Login ID", key="psu")
-        old_password = st.text_input("Current Password", type="password", key="psopw")
-        new_password = st.text_input("New Password", type="password", key="psnpw")
-        confirm_password = st.text_input("Confirm New Password", type="password", key="psc")
-        submit = st.form_submit_button("Set/Change Password")
-        if submit:
-            if username not in USERS:
-                st.error("User does not exist.")
-            elif USERS[username] != old_password:
-                st.error("Current password incorrect.")
-            elif new_password != confirm_password:
-                st.error("New passwords do not match.")
-            elif not new_password:
-                st.error("New password cannot be empty.")
-            else:
-                USERS[username] = new_password
-                st.success("Password updated successfully! Please login again.")
-                st.session_state['logged_in'] = False
-                st.session_state['username'] = ""
-                return True
-    return False
 
 def make_columns_unique(df):
     cols = pd.Series(df.columns)
