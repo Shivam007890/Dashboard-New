@@ -443,43 +443,21 @@ def individual_dashboard(gc):
         blocks = find_cuts_and_blocks(data)
         all_labels = [b["label"] for b in blocks]
 
+        # Main expanders for each section as before
         for prefix, display_name in all_levels:
             block_labels = [l for l in all_labels if l.startswith(prefix+" ")]
             if not block_labels:
-                continue  # Skip section if there are no blocks for it
+                st.info(f"No cuts found for {display_name}.")
+                continue
             with st.expander(f"{display_name} ({prefix})", expanded=True if prefix == "State" else False):
                 selected_cut = st.selectbox(
                     f"Select Cut for {display_name}",
                     block_labels,
                     key=f"{prefix}_cut_select"
-                )
-                block = next(b for b in blocks if b["label"] == selected_cut)
-                df = extract_block_df(data, block)
-                if df.empty:
-                    st.warning(f"No data available for: {selected_cut}")
-                    continue
-                st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_cut}</h4>', unsafe_allow_html=True)
-                styled_df = df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
-                st.dataframe(styled_df, height=min(400, 50 + 40 * len(df)))
-                st.markdown('</div>', unsafe_allow_html=True)
-                plot_horizontal_bar_plotly(df)
-                csv = df.to_csv(index=False).encode('utf-8')
-                st.download_button(f"Download CSV ({selected_cut})", csv, f"{selected_sheet}_{selected_cut}.csv", "text/csv", key=f"csv_{prefix}")
-                pdf_file = dataframe_to_pdf(df, f"{selected_sheet} - {selected_cut}")
-                st.download_button(f"Download PDF ({selected_cut})", pdf_file, f"{selected_sheet}_{selected_cut}.pdf", "application/pdf", key=f"pdf_{prefix}")
-                st.markdown("---")
-
-        # --- Additional: Region-specific filtered report ---
-        region_blocks = [l for l in all_labels if l.startswith("Region ")]
-        if region_blocks:
-            unique_regions = sorted(set(" ".join(l.split()[:2]) for l in region_blocks))
-            with st.expander("Region-wise Filtered Report (choose specific Region)", expanded=False):
-                selected_region = st.selectbox("Select Region", unique_regions, key="region_filtered_select")
-                cuts_for_region = [l for l in region_blocks if l.startswith(selected_region)]
-                if cuts_for_region:
-                    selected_cut = st.selectbox(f"Select Cut for {selected_region}", cuts_for_region, key="region_filtered_cut_select")
-                    block = next(b for b in blocks if b["label"] == selected_cut)
-                    df = extract_block_df(data, block)
+                ) if block_labels else None
+                if selected_cut:
+                    block = next((b for b in blocks if b["label"] == selected_cut), None)
+                    df = extract_block_df(data, block) if block else pd.DataFrame()
                     if df.empty:
                         st.warning(f"No data available for: {selected_cut}")
                     else:
@@ -489,85 +467,45 @@ def individual_dashboard(gc):
                         st.markdown('</div>', unsafe_allow_html=True)
                         plot_horizontal_bar_plotly(df)
                         csv = df.to_csv(index=False).encode('utf-8')
-                        st.download_button(f"Download CSV ({selected_cut})", csv, f"{selected_sheet}_{selected_cut}.csv", "text/csv", key=f"csv_region_filtered")
+                        st.download_button(f"Download CSV ({selected_cut})", csv, f"{selected_sheet}_{selected_cut}.csv", "text/csv", key=f"csv_{prefix}")
                         pdf_file = dataframe_to_pdf(df, f"{selected_sheet} - {selected_cut}")
-                        st.download_button(f"Download PDF ({selected_cut})", pdf_file, f"{selected_sheet}_{selected_cut}.pdf", "application/pdf", key=f"pdf_region_filtered")
+                        st.download_button(f"Download PDF ({selected_cut})", pdf_file, f"{selected_sheet}_{selected_cut}.pdf", "application/pdf", key=f"pdf_{prefix}")
                         st.markdown("---")
+                else:
+                    st.warning(f"No cuts available for {display_name}.")
 
-        # --- Additional: Zone-specific filtered report ---
-        zone_blocks = [l for l in all_labels if l.startswith("Zone ")]
-        if zone_blocks:
-            unique_zones = sorted(set(" ".join(l.split()[:2]) for l in zone_blocks))
-            with st.expander("Zone-wise Filtered Report (choose specific Zone)", expanded=False):
-                selected_zone = st.selectbox("Select Zone", unique_zones, key="zone_filtered_select")
-                cuts_for_zone = [l for l in zone_blocks if l.startswith(selected_zone)]
-                if cuts_for_zone:
-                    selected_cut = st.selectbox(f"Select Cut for {selected_zone}", cuts_for_zone, key="zone_filtered_cut_select")
-                    block = next(b for b in blocks if b["label"] == selected_cut)
-                    df = extract_block_df(data, block)
-                    if df.empty:
-                        st.warning(f"No data available for: {selected_cut}")
+        # Filtered section for each Region/Zone/District/AC
+        for prefix, label in [("Region", "Region-wise"), ("Zone", "Zone-wise"), ("District", "District-wise"), ("AC", "AC-wise")]:
+            section_blocks = [l for l in all_labels if l.startswith(prefix + " ")]
+            if section_blocks:
+                unique_names = sorted(set(" ".join(l.split()[:2]) for l in section_blocks))
+                with st.expander(f"{label} Filtered Report (choose specific {prefix})", expanded=False):
+                    if unique_names:
+                        selected_name = st.selectbox(f"Select {prefix}", unique_names, key=f"{prefix}_filtered_select")
+                        cuts_for_name = [l for l in section_blocks if l.startswith(selected_name)]
+                        if cuts_for_name:
+                            selected_cut = st.selectbox(f"Select Cut for {selected_name}", cuts_for_name, key=f"{prefix}_filtered_cut_select")
+                            block = next((b for b in blocks if b["label"] == selected_cut), None)
+                            df = extract_block_df(data, block) if block else pd.DataFrame()
+                            if df.empty:
+                                st.warning(f"No data available for: {selected_cut}")
+                            else:
+                                st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_cut}</h4>', unsafe_allow_html=True)
+                                styled_df = df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
+                                st.dataframe(styled_df, height=min(400, 50 + 40 * len(df)))
+                                st.markdown('</div>', unsafe_allow_html=True)
+                                plot_horizontal_bar_plotly(df)
+                                csv = df.to_csv(index=False).encode('utf-8')
+                                st.download_button(f"Download CSV ({selected_cut})", csv, f"{selected_sheet}_{selected_cut}.csv", "text/csv", key=f"csv_{prefix}_filtered")
+                                pdf_file = dataframe_to_pdf(df, f"{selected_sheet} - {selected_cut}")
+                                st.download_button(f"Download PDF ({selected_cut})", pdf_file, f"{selected_sheet}_{selected_cut}.pdf", "application/pdf", key=f"pdf_{prefix}_filtered")
+                                st.markdown("---")
+                        else:
+                            st.info(f"No cuts available for {selected_name}.")
                     else:
-                        st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_cut}</h4>', unsafe_allow_html=True)
-                        styled_df = df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
-                        st.dataframe(styled_df, height=min(400, 50 + 40 * len(df)))
-                        st.markdown('</div>', unsafe_allow_html=True)
-                        plot_horizontal_bar_plotly(df)
-                        csv = df.to_csv(index=False).encode('utf-8')
-                        st.download_button(f"Download CSV ({selected_cut})", csv, f"{selected_sheet}_{selected_cut}.csv", "text/csv", key=f"csv_zone_filtered")
-                        pdf_file = dataframe_to_pdf(df, f"{selected_sheet} - {selected_cut}")
-                        st.download_button(f"Download PDF ({selected_cut})", pdf_file, f"{selected_sheet}_{selected_cut}.pdf", "application/pdf", key=f"pdf_zone_filtered")
-                        st.markdown("---")
-
-        # --- Additional: District-specific filtered report ---
-        district_blocks = [l for l in all_labels if l.startswith("District ")]
-        if district_blocks:
-            unique_districts = sorted(set(" ".join(l.split()[:2]) for l in district_blocks))
-            with st.expander("District-wise Filtered Report (choose specific District)", expanded=False):
-                selected_district = st.selectbox("Select District", unique_districts, key="district_filtered_select")
-                cuts_for_district = [l for l in district_blocks if l.startswith(selected_district)]
-                if cuts_for_district:
-                    selected_cut = st.selectbox(f"Select Cut for {selected_district}", cuts_for_district, key="district_filtered_cut_select")
-                    block = next(b for b in blocks if b["label"] == selected_cut)
-                    df = extract_block_df(data, block)
-                    if df.empty:
-                        st.warning(f"No data available for: {selected_cut}")
-                    else:
-                        st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_cut}</h4>', unsafe_allow_html=True)
-                        styled_df = df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
-                        st.dataframe(styled_df, height=min(400, 50 + 40 * len(df)))
-                        st.markdown('</div>', unsafe_allow_html=True)
-                        plot_horizontal_bar_plotly(df)
-                        csv = df.to_csv(index=False).encode('utf-8')
-                        st.download_button(f"Download CSV ({selected_cut})", csv, f"{selected_sheet}_{selected_cut}.csv", "text/csv", key=f"csv_district_filtered")
-                        pdf_file = dataframe_to_pdf(df, f"{selected_sheet} - {selected_cut}")
-                        st.download_button(f"Download PDF ({selected_cut})", pdf_file, f"{selected_sheet}_{selected_cut}.pdf", "application/pdf", key=f"pdf_district_filtered")
-                        st.markdown("---")
-
-        # --- Additional: AC-specific filtered report ---
-        ac_blocks = [l for l in all_labels if l.startswith("AC ")]
-        if ac_blocks:
-            unique_acs = sorted(set(" ".join(l.split()[:2]) for l in ac_blocks))
-            with st.expander("AC-wise Filtered Report (choose specific AC)", expanded=False):
-                selected_ac = st.selectbox("Select AC", unique_acs, key="ac_filtered_select")
-                cuts_for_ac = [l for l in ac_blocks if l.startswith(selected_ac)]
-                if cuts_for_ac:
-                    selected_cut = st.selectbox(f"Select Cut for {selected_ac}", cuts_for_ac, key="ac_filtered_cut_select")
-                    block = next(b for b in blocks if b["label"] == selected_cut)
-                    df = extract_block_df(data, block)
-                    if df.empty:
-                        st.warning(f"No data available for: {selected_cut}")
-                    else:
-                        st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_cut}</h4>', unsafe_allow_html=True)
-                        styled_df = df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
-                        st.dataframe(styled_df, height=min(400, 50 + 40 * len(df)))
-                        st.markdown('</div>', unsafe_allow_html=True)
-                        plot_horizontal_bar_plotly(df)
-                        csv = df.to_csv(index=False).encode('utf-8')
-                        st.download_button(f"Download CSV ({selected_cut})", csv, f"{selected_sheet}_{selected_cut}.csv", "text/csv", key=f"csv_ac_filtered")
-                        pdf_file = dataframe_to_pdf(df, f"{selected_sheet} - {selected_cut}")
-                        st.download_button(f"Download PDF ({selected_cut})", pdf_file, f"{selected_sheet}_{selected_cut}.pdf", "application/pdf", key=f"pdf_ac_filtered")
-                        st.markdown("---")
+                        st.info(f"No {prefix} names found in this sheet.")
+            else:
+                pass
 
     except Exception as e:
         st.error(f"Could not load individual survey report: {e}")
