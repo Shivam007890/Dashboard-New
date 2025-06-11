@@ -387,10 +387,9 @@ def comparative_dashboard(gc):
         if not comparative_sheets:
             st.warning("No comparative analysis sheets found.")
             return
-        # Show the full question text (after "Comp_")
         def clean_comp_name(s):
             if s.lower().startswith("comp_"):
-                return s[5:].replace("_", " ", 1)
+                return s[5:]
             return s
         question_labels = [clean_comp_name(s) for s in comparative_sheets]
         selected_idx = st.selectbox("Select Question for Comparative Analysis", list(range(len(question_labels))), format_func=lambda i: question_labels[i])
@@ -439,85 +438,34 @@ def individual_dashboard(gc):
 
         if level.startswith("A."):
             report_level = "Statewide"
-            cuts = [
-                "Overall", "Gender-wise", "Age-wise", "Religion-wise", "Community-wise",
-                "Gender + Religion-wise", "Age + Religion-wise", "Age + Gender-wise",
-                "Community + Gender-wise", "Community + Religion-wise", "First-time Voters",
-                "Region-wise (Malabar/Non Malabar)", "Region + Religion-wise", "Regionwise", "Region Wise"
-            ]
+            block_labels = [l for l in all_labels if l.startswith("State ")]
         elif level.startswith("B."):
             report_level = "Region Wise"
-            cuts = [
-                "Region-wise (Malabar/Non Malabar)", "Region + Religion-wise",
-                "Regionwise", "Region Wise"
-            ]
+            block_labels = [l for l in all_labels if l.startswith("Region ")]
         elif level.startswith("C."):
             report_level = "District Wise"
-            cuts = [
-                "District-wise", "Districtwise", "District Wise"
-            ]
+            block_labels = [l for l in all_labels if l.startswith("District ")]
         else:
             report_level = "AC Wise"
-            cuts = [
-                "AC-wise (Assembly Constituency)", "ACwise", "AC Wise", "Assembly Constituency wise", "AC-wise"
-            ]
+            block_labels = [l for l in all_labels if l.startswith("AC ") or "Assembly Constituency" in l]
 
-        block_labels = [b for b in all_labels if b in cuts]
         if not block_labels:
             st.warning(f"No {report_level} cuts found in this question. Available cuts: {', '.join(all_labels)}")
             return
 
-        if level.startswith("A."):
-            for block_label in block_labels:
-                block = next(b for b in blocks if b["label"] == block_label)
-                df = extract_block_df(data, block)
-                st.markdown(f'<div class="center-table"><h4 style="text-align:center">{block_label}</h4>', unsafe_allow_html=True)
-                styled_df = df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
-                st.dataframe(styled_df, height=min(400, 50 + 40 * len(df)))
-                st.markdown('</div>', unsafe_allow_html=True)
-                plot_horizontal_bar_plotly(df)
-                csv = df.to_csv(index=False).encode('utf-8')
-                st.download_button(f"Download CSV ({block_label})", csv, f"{selected_sheet}_{block_label}.csv", "text/csv")
-                pdf_file = dataframe_to_pdf(df, f"{selected_sheet} - {block_label}")
-                st.download_button(f"Download PDF ({block_label})", pdf_file, f"{selected_sheet}_{block_label}.pdf", "application/pdf")
-                st.markdown("---")
-        else:
-            selected_block_label = st.selectbox("Select Block", block_labels)
-            block = next(b for b in blocks if b["label"] == selected_block_label)
+        for block_label in block_labels:
+            block = next(b for b in blocks if b["label"] == block_label)
             df = extract_block_df(data, block)
-            if (
-                level.startswith("B.")
-                or level.startswith("C.")
-                or level.startswith("D.")
-            ):
-                first_col = df.columns[0]
-                unique_splits = [v for v in df[first_col].unique() if pd.notna(v) and str(v).strip() != '']
-                if len(unique_splits) > 1:
-                    selected_split = st.selectbox(
-                        f"Select {report_level.split()[0]}",
-                        unique_splits,
-                        key=f"split_{level}"
-                    )
-                    split_df = df[df[first_col] == selected_split].reset_index(drop=True)
-                else:
-                    split_df = df
-            else:
-                split_df = df
-
-            st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_sheet} - {selected_block_label}</h4>', unsafe_allow_html=True)
-            styled_df = split_df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
-            st.dataframe(styled_df, height=min(400, 50 + 40 * len(split_df)))
+            st.markdown(f'<div class="center-table"><h4 style="text-align:center">{block_label}</h4>', unsafe_allow_html=True)
+            styled_df = df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
+            st.dataframe(styled_df, height=min(400, 50 + 40 * len(df)))
             st.markdown('</div>', unsafe_allow_html=True)
-            value_cols = get_value_columns(split_df)
-            if value_cols:
-                try:
-                    plot_horizontal_bar_plotly(split_df)
-                except Exception:
-                    pass
-            csv = split_df.to_csv(index=False).encode('utf-8')
-            st.download_button("Download CSV", csv, f"{selected_sheet}_{selected_block_label}.csv", "text/csv")
-            pdf_file = dataframe_to_pdf(split_df, f"{selected_sheet} - {selected_block_label}")
-            st.download_button("Download PDF", pdf_file, f"{selected_sheet}_{selected_block_label}.pdf", "application/pdf")
+            plot_horizontal_bar_plotly(df)
+            csv = df.to_csv(index=False).encode('utf-8')
+            st.download_button(f"Download CSV ({block_label})", csv, f"{selected_sheet}_{block_label}.csv", "text/csv")
+            pdf_file = dataframe_to_pdf(df, f"{selected_sheet} - {block_label}")
+            st.download_button(f"Download PDF ({block_label})", pdf_file, f"{selected_sheet}_{block_label}.pdf", "application/pdf")
+            st.markdown("---")
     except Exception as e:
         st.error(f"Could not load individual survey report: {e}")
 
