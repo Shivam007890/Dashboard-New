@@ -21,16 +21,13 @@ USERS = {
 def inject_custom_css():
     st.markdown("""
     <style>
-    /* Main background: soft, neutral */
     .stApp {
         background: linear-gradient(120deg, #f6f8fa 0%, #eaf1fb 100%) !important;
         min-height: 100vh;
     }
-    /* Sidebar: deep blue */
     section[data-testid="stSidebar"] {
         background: linear-gradient(135deg, #1a237e 0%, #3949ab 100%) !important;
     }
-    /* Title: blue gradient, professional font */
     .dashboard-title {
         font-size: 2.7rem;
         font-weight: 700;
@@ -44,7 +41,6 @@ def inject_custom_css():
         font-family: 'Segoe UI', 'Roboto', Arial, sans-serif;
         letter-spacing: 0.02em;
     }
-    /* Center the map below title */
     .center-map {
         display: flex;
         justify-content: center;
@@ -52,7 +48,6 @@ def inject_custom_css():
         margin-bottom: 1.2em;
         margin-top: 0.5em;
     }
-    /* Section headers: subtle blue gradient */
     .section-header {
         font-size: 1.4rem;
         font-weight: 700;
@@ -65,7 +60,6 @@ def inject_custom_css():
         text-align: center;
         letter-spacing: 0.01em;
     }
-    /* Buttons: blue solid with gradient hover */
     .stButton>button {
         background: #1976d2;
         color: #fff;
@@ -293,6 +287,13 @@ def plot_horizontal_bar_plotly(df):
     df = df[~df[label_col].astype(str).str.lower().str.contains('difference')]
     exclude_keywords = ['sample', 'total', 'grand']
     value_cols = [col for col in df.columns[1:] if not any(k in col.strip().lower() for k in exclude_keywords)]
+    # Custom blue color scale from light to dark
+    blue_scale = ["#f7fbff", "#c6dbef", "#6aaed6", "#2070b4", "#08306b"]
+    # Repeat or trim to match number of bars
+    if len(value_cols) > 0:
+        colors = blue_scale * (len(value_cols) // len(blue_scale) + 1)
+    else:
+        colors = blue_scale
     for col in value_cols:
         try:
             df[col] = df[col].astype(str).str.replace('%', '', regex=False).astype(float)
@@ -306,12 +307,13 @@ def plot_horizontal_bar_plotly(df):
         fig = px.bar(df, y=label_col, x=value_col, orientation='h',
                      text=value_col,
                      color=label_col,
-                     color_discrete_sequence=px.colors.sequential.Blues)
+                     color_discrete_sequence=colors,
+                     )
         fig.update_layout(title=f"Distribution by {label_col}",
                           xaxis_title=value_col, yaxis_title=label_col,
                           showlegend=False, bargap=0.2,
-                          plot_bgcolor="#f6f8fa",
-                          paper_bgcolor="#f6f8fa"
+                          plot_bgcolor="#f7fbff",
+                          paper_bgcolor="#f7fbff"
                           )
         fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     else:
@@ -319,12 +321,12 @@ def plot_horizontal_bar_plotly(df):
         fig = px.bar(long_df, y=label_col, x='Value', color='Category',
                      orientation='h', barmode='group',
                      text='Value',
-                     color_discrete_sequence=px.colors.sequential.Blues)
+                     color_discrete_sequence=colors)
         fig.update_layout(title=f"Distribution by {label_col}",
                           xaxis_title='Value', yaxis_title=label_col,
                           bargap=0.2, legend_title="Category",
-                          plot_bgcolor="#f6f8fa",
-                          paper_bgcolor="#f6f8fa"
+                          plot_bgcolor="#f7fbff",
+                          paper_bgcolor="#f7fbff"
                           )
         fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     st.plotly_chart(fig, use_container_width=True)
