@@ -296,7 +296,6 @@ def plot_horizontal_bar_plotly(df):
     exclude_keywords = ['sample', 'total', 'grand']
     value_cols = [col for col in df.columns[1:] if not any(k in col.strip().lower() for k in exclude_keywords)]
     blue_scale = ["#f7fbff", "#c6dbef", "#6aaed6", "#2070b4", "#08306b"]  # your custom gradient
-    # assign colors to bars
     n_bars = df.shape[0] if len(value_cols) == 1 else len(value_cols)
     colors = blue_scale * ((n_bars // len(blue_scale)) + 1)
     for col in value_cols:
@@ -337,18 +336,29 @@ def plot_horizontal_bar_plotly(df):
         fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     st.plotly_chart(fig, use_container_width=True)
 
-def is_question_sheet(name):
-    # Only include sheets that look like question sheets:
-    # - Do not start with comp_, comparative analysis, summary, dashboard, meta, info, or _
-    # - At least one digit at start (for "Q1", "Q2", etc) OR contains 'question' OR 'q' followed by a digit
+def is_question_sheet(name, worksheet):
+    """
+    Only include visible (not hidden) sheets that look like question sheets:
+    """
     name_lower = name.strip().lower()
+    # Exclude if hidden
+    try:
+        if hasattr(worksheet, 'hidden') and worksheet.hidden:
+            return False
+    except Exception:
+        pass
+    # Exclude by prefix/type
     excluded = any([
         name_lower.startswith(prefix)
         for prefix in [
             'comp_', 'comparative analysis', 'summary', 'dashboard', 'meta', 'info', '_'
         ]
     ])
-    looks_like_q = bool(re.search(r'\bq\d+\b', name_lower)) or "question" in name_lower or bool(re.match(r'^\d', name_lower))
+    looks_like_q = (
+        bool(re.search(r'\bq\d+\b', name_lower)) or
+        "question" in name_lower or
+        bool(re.match(r'^\d', name_lower))
+    )
     return (not excluded) and looks_like_q
 
 def main_dashboard(gc):
@@ -419,8 +429,8 @@ def individual_dashboard(gc):
         ]
     )
     try:
-        all_sheets = [ws.title for ws in gc.open(SHEET_NAME).worksheets()]
-        question_sheets = [s for s in all_sheets if is_question_sheet(s)]
+        all_ws = gc.open(SHEET_NAME).worksheets()
+        question_sheets = [ws.title for ws in all_ws if is_question_sheet(ws.title, ws)]
         if not question_sheets:
             st.warning("No question sheets found.")
             return
