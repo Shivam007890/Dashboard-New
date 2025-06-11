@@ -289,7 +289,7 @@ def dataframe_to_pdf(df, title):
     pdf_bytes = pdf.output(dest='S').encode('latin1')
     return BytesIO(pdf_bytes)
 
-def plot_horizontal_bar_plotly(df):
+def plot_horizontal_bar_plotly(df, key=None):
     label_col = df.columns[0]
     df = df[~df[label_col].astype(str).str.lower().str.contains('difference')]
     exclude_keywords = ['sample', 'total', 'grand']
@@ -333,7 +333,7 @@ def plot_horizontal_bar_plotly(df):
             plot_bgcolor="#f7fbff", paper_bgcolor="#f7fbff"
         )
         fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, key=key)
 
 def is_question_sheet(ws):
     name = ws.title.strip().lower()
@@ -415,7 +415,7 @@ def comparative_dashboard(gc):
         styled_df = df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
         st.dataframe(styled_df, height=min(400, 50 + 40 * len(df)))
         st.markdown('</div>', unsafe_allow_html=True)
-        plot_horizontal_bar_plotly(df)
+        plot_horizontal_bar_plotly(df, key=f"comparative_{selected_sheet}")
         csv = df.to_csv(index=False).encode('utf-8')
         st.download_button("Download CSV", csv, f"{selected_sheet}_comparative.csv", "text/csv")
         pdf_file = dataframe_to_pdf(df, f"Comparative Analysis - {selected_sheet}")
@@ -465,22 +465,20 @@ def individual_dashboard(gc):
                         styled_df = df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
                         st.dataframe(styled_df, height=min(400, 50 + 40 * len(df)))
                         st.markdown('</div>', unsafe_allow_html=True)
-                        plot_horizontal_bar_plotly(df)
+                        plot_horizontal_bar_plotly(df=df, key=f"{prefix}_{selected_cut}_mainplot")
                         csv = df.to_csv(index=False).encode('utf-8')
-                        st.download_button(f"Download CSV ({selected_cut})", csv, f"{selected_sheet}_{selected_cut}.csv", "text/csv", key=f"csv_{prefix}")
+                        st.download_button(f"Download CSV ({selected_cut})", csv, f"{selected_sheet}_{selected_cut}.csv", "text/csv", key=f"csv_{prefix}_{selected_cut}_main")
                         pdf_file = dataframe_to_pdf(df, f"{selected_sheet} - {selected_cut}")
-                        st.download_button(f"Download PDF ({selected_cut})", pdf_file, f"{selected_sheet}_{selected_cut}.pdf", "application/pdf", key=f"pdf_{prefix}")
+                        st.download_button(f"Download PDF ({selected_cut})", pdf_file, f"{selected_sheet}_{selected_cut}.pdf", "application/pdf", key=f"pdf_{prefix}_{selected_cut}_main")
                         st.markdown("---")
                 else:
                     st.warning(f"No cuts available for {display_name}.")
 
-        # Filtered section for each State/Region/Zone/District/AC
+        # Filtered section for Region/Zone/District only (no State, no AC)
         for prefix, label in [
-            ("State", "State-wise"),
             ("Region", "Region-wise"),
             ("Zone", "Zone-wise"),
-            ("District", "District-wise"),
-            ("AC", "AC-wise")
+            ("District", "District-wise")
         ]:
             section_blocks = [l for l in all_labels if l.startswith(prefix + " ")]
             if section_blocks:
@@ -500,11 +498,11 @@ def individual_dashboard(gc):
                                 styled_df = df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
                                 st.dataframe(styled_df, height=min(400, 50 + 40 * len(df)))
                                 st.markdown('</div>', unsafe_allow_html=True)
-                                plot_horizontal_bar_plotly(df)
+                                plot_horizontal_bar_plotly(df=df, key=f"{prefix}_{selected_name}_{selected_cut}_filteredplot")
                                 csv = df.to_csv(index=False).encode('utf-8')
-                                st.download_button(f"Download CSV ({selected_cut})", csv, f"{selected_sheet}_{selected_cut}.csv", "text/csv", key=f"csv_{prefix}_filtered")
+                                st.download_button(f"Download CSV ({selected_cut})", csv, f"{selected_sheet}_{selected_cut}.csv", "text/csv", key=f"csv_{prefix}_{selected_name}_{selected_cut}_filtered")
                                 pdf_file = dataframe_to_pdf(df, f"{selected_sheet} - {selected_cut}")
-                                st.download_button(f"Download PDF ({selected_cut})", pdf_file, f"{selected_sheet}_{selected_cut}.pdf", "application/pdf", key=f"pdf_{prefix}_filtered")
+                                st.download_button(f"Download PDF ({selected_cut})", pdf_file, f"{selected_sheet}_{selected_cut}.pdf", "application/pdf", key=f"pdf_{prefix}_{selected_name}_{selected_cut}_filtered")
                                 st.markdown("---")
                         else:
                             st.info(f"No cuts available for {selected_name}.")
