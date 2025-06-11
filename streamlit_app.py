@@ -361,16 +361,6 @@ def extract_month_number(tab_name):
             return i+1
     return -1 # not found
 
-def extract_entity(label, prefix):
-    """
-    Extracts the entity name (e.g., Malabar) from a label like 'Region Malabar + Gender' or 'Region Malabar Summary'
-    """
-    pattern = rf'^{prefix}\s+(.+?)(?:\s*\+.*| Summary.*)?$'
-    m = re.match(pattern, label)
-    if m:
-        return m.group(1).strip()
-    return None
-
 def main_dashboard(gc):
     inject_custom_css()
     st.markdown('<div class="dashboard-title">🤖 Kerala Survey Dashboard</div>', unsafe_allow_html=True)
@@ -492,30 +482,42 @@ def individual_dashboard(gc):
             ("District", "District-wise")
         ]:
             section_blocks = [l for l in all_labels if l.startswith(prefix + " ")]
-            entity_names = sorted(set(extract_entity(l, prefix) for l in section_blocks if extract_entity(l, prefix)))
+            # Group blocks by entity (region/zone/district) name
+            entity_groups = {}
+            for l in section_blocks:
+                m = re.match(rf'{prefix}\s+([^\+]+?)(?:\s*\+.*| Summary.*)?$', l)
+                if m:
+                    entity_name = m.group(1).strip()
+                    entity_groups.setdefault(entity_name, []).append(l)
+            entity_names = sorted(entity_groups.keys())
             with st.expander(f"{label} Filtered Report (choose specific {prefix})", expanded=False):
                 if entity_names:
                     selected_name = st.selectbox(f"Select {prefix}", entity_names, key=f"{prefix}_filtered_select")
-                    cuts_for_name = [l for l in section_blocks if extract_entity(l, prefix) == selected_name]
-                    if cuts_for_name:
-                        selected_cut = st.selectbox(f"Select Cut for {selected_name}", cuts_for_name, key=f"{prefix}_filtered_cut_select")
-                        block = next((b for b in blocks if b["label"] == selected_cut), None)
-                        df = extract_block_df(data, block) if block else pd.DataFrame()
-                        if df.empty:
-                            st.warning(f"No data available for: {selected_cut}")
-                        else:
-                            st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_cut}</h4>', unsafe_allow_html=True)
-                            styled_df = df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
-                            st.dataframe(styled_df, height=min(400, 50 + 40 * len(df)))
-                            st.markdown('</div>', unsafe_allow_html=True)
-                            plot_horizontal_bar_plotly(df=df, key=f"{prefix}_{selected_name}_{selected_cut}_filteredplot")
-                            csv = df.to_csv(index=False).encode('utf-8')
-                            st.download_button(f"Download CSV ({selected_cut})", csv, f"{selected_sheet}_{selected_cut}.csv", "text/csv", key=f"csv_{prefix}_{selected_name}_{selected_cut}_filtered")
-                            pdf_file = dataframe_to_pdf(df, f"{selected_sheet} - {selected_cut}")
-                            st.download_button(f"Download PDF ({selected_cut})", pdf_file, f"{selected_sheet}_{selected_cut}.pdf", "application/pdf", key=f"pdf_{prefix}_{selected_name}_{selected_cut}_filtered")
-                            st.markdown("---")
+                    cuts_for_name = entity_groups[selected_name]
+                    # extract cut names for each block
+                    def extract_cut(label, prefix, selected_name):
+                        cut = label.replace(f"{prefix} {selected_name}", "", 1).strip()
+                        return cut if cut else "Summary"
+                    cut_names = [extract_cut(l, prefix, selected_name) for l in cuts_for_name]
+                    selected_cut_name = st.selectbox(f"Select Cut for {selected_name}", cut_names, key=f"{prefix}_filtered_cut_select")
+                    # Map cut name to block label
+                    label_map = dict(zip(cut_names, cuts_for_name))
+                    selected_label = label_map[selected_cut_name]
+                    block = next((b for b in blocks if b["label"] == selected_label), None)
+                    df = extract_block_df(data, block) if block else pd.DataFrame()
+                    if df.empty:
+                        st.warning(f"No data available for: {selected_label}")
                     else:
-                        st.info(f"No cuts available for {selected_name}.")
+                        st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_label}</h4>', unsafe_allow_html=True)
+                        styled_df = df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
+                        st.dataframe(styled_df, height=min(400, 50 + 40 * len(df)))
+                        st.markdown('</div>', unsafe_allow_html=True)
+                        plot_horizontal_bar_plotly(df=df, key=f"{prefix}_{selected_name}_{selected_label}_filteredplot")
+                        csv = df.to_csv(index=False).encode('utf-8')
+                        st.download_button(f"Download CSV ({selected_label})", csv, f"{selected_sheet}_{selected_label}.csv", "text/csv", key=f"csv_{prefix}_{selected_name}_{selected_label}_filtered")
+                        pdf_file = dataframe_to_pdf(df, f"{selected_sheet} - {selected_label}")
+                        st.download_button(f"Download PDF ({selected_label})", pdf_file, f"{selected_sheet}_{selected_label}.pdf", "application/pdf", key=f"pdf_{prefix}_{selected_name}_{selected_label}_filtered")
+                        st.markdown("---")
                 else:
                     st.info(f"No {prefix} names found in this sheet.")
 
