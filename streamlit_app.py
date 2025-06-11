@@ -9,6 +9,7 @@ import json
 import tempfile
 import plotly.express as px
 import base64
+import re
 
 SHEET_NAME = "Kerala Weekly Survey Automation Dashboard Test Run"
 
@@ -59,6 +60,13 @@ def inject_custom_css():
         margin-bottom: 0.4em;
         text-align: center;
         letter-spacing: 0.01em;
+    }
+    .center-table {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin-top: 1em;
+        margin-bottom: 1em;
     }
     .stButton>button {
         background: #1976d2;
@@ -287,13 +295,10 @@ def plot_horizontal_bar_plotly(df):
     df = df[~df[label_col].astype(str).str.lower().str.contains('difference')]
     exclude_keywords = ['sample', 'total', 'grand']
     value_cols = [col for col in df.columns[1:] if not any(k in col.strip().lower() for k in exclude_keywords)]
-    # Custom blue color scale from light to dark
-    blue_scale = ["#f7fbff", "#c6dbef", "#6aaed6", "#2070b4", "#08306b"]
-    # Repeat or trim to match number of bars
-    if len(value_cols) > 0:
-        colors = blue_scale * (len(value_cols) // len(blue_scale) + 1)
-    else:
-        colors = blue_scale
+    blue_scale = ["#f7fbff", "#c6dbef", "#6aaed6", "#2070b4", "#08306b"]  # your custom gradient
+    # assign colors to bars
+    n_bars = df.shape[0] if len(value_cols) == 1 else len(value_cols)
+    colors = blue_scale * ((n_bars // len(blue_scale)) + 1)
     for col in value_cols:
         try:
             df[col] = df[col].astype(str).str.replace('%', '', regex=False).astype(float)
@@ -304,32 +309,47 @@ def plot_horizontal_bar_plotly(df):
         return
     if len(value_cols) == 1:
         value_col = value_cols[0]
-        fig = px.bar(df, y=label_col, x=value_col, orientation='h',
-                     text=value_col,
-                     color=label_col,
-                     color_discrete_sequence=colors,
-                     )
-        fig.update_layout(title=f"Distribution by {label_col}",
-                          xaxis_title=value_col, yaxis_title=label_col,
-                          showlegend=False, bargap=0.2,
-                          plot_bgcolor="#f7fbff",
-                          paper_bgcolor="#f7fbff"
-                          )
+        fig = px.bar(
+            df, y=label_col, x=value_col, orientation='h', text=value_col,
+            color=label_col,
+            color_discrete_sequence=colors
+        )
+        fig.update_layout(
+            title=f"Distribution by {label_col}",
+            xaxis_title=value_col, yaxis_title=label_col,
+            showlegend=False, bargap=0.2,
+            plot_bgcolor="#f7fbff", paper_bgcolor="#f7fbff"
+        )
         fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     else:
         long_df = df.melt(id_vars=label_col, value_vars=value_cols, var_name='Category', value_name='Value')
-        fig = px.bar(long_df, y=label_col, x='Value', color='Category',
-                     orientation='h', barmode='group',
-                     text='Value',
-                     color_discrete_sequence=colors)
-        fig.update_layout(title=f"Distribution by {label_col}",
-                          xaxis_title='Value', yaxis_title=label_col,
-                          bargap=0.2, legend_title="Category",
-                          plot_bgcolor="#f7fbff",
-                          paper_bgcolor="#f7fbff"
-                          )
+        fig = px.bar(
+            long_df, y=label_col, x='Value', color='Category',
+            orientation='h', barmode='group', text='Value',
+            color_discrete_sequence=colors
+        )
+        fig.update_layout(
+            title=f"Distribution by {label_col}",
+            xaxis_title='Value', yaxis_title=label_col,
+            bargap=0.2, legend_title="Category",
+            plot_bgcolor="#f7fbff", paper_bgcolor="#f7fbff"
+        )
         fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     st.plotly_chart(fig, use_container_width=True)
+
+def is_question_sheet(name):
+    # Only include sheets that look like question sheets:
+    # - Do not start with comp_, comparative analysis, summary, dashboard, meta, info, or _
+    # - At least one digit at start (for "Q1", "Q2", etc) OR contains 'question' OR 'q' followed by a digit
+    name_lower = name.strip().lower()
+    excluded = any([
+        name_lower.startswith(prefix)
+        for prefix in [
+            'comp_', 'comparative analysis', 'summary', 'dashboard', 'meta', 'info', '_'
+        ]
+    ])
+    looks_like_q = bool(re.search(r'\bq\d+\b', name_lower)) or "question" in name_lower or bool(re.match(r'^\d', name_lower))
+    return (not excluded) and looks_like_q
 
 def main_dashboard(gc):
     inject_custom_css()
@@ -374,9 +394,11 @@ def comparative_dashboard(gc):
             return
         block = blocks[0]
         df = extract_block_df(data, block)
+        st.markdown('<div class="center-table">', unsafe_allow_html=True)
         st.markdown("### Comparative Results")
-        styled_df = df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line', 'background': '#f6f8fa'})
+        styled_df = df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
         st.dataframe(styled_df, height=min(400, 50 + 40 * len(df)))
+        st.markdown('</div>', unsafe_allow_html=True)
         plot_horizontal_bar_plotly(df)
         csv = df.to_csv(index=False).encode('utf-8')
         st.download_button("Download CSV", csv, f"{selected_sheet}_comparative.csv", "text/csv")
@@ -398,18 +420,7 @@ def individual_dashboard(gc):
     )
     try:
         all_sheets = [ws.title for ws in gc.open(SHEET_NAME).worksheets()]
-        question_sheets = [
-            s for s in all_sheets
-            if not (
-                s.lower().startswith('comp_') or
-                s.lower().startswith('comparative analysis') or
-                'summary' in s.lower() or
-                'dashboard' in s.lower() or
-                'meta' in s.lower() or
-                'info' in s.lower() or
-                s.startswith('_')
-            )
-        ]
+        question_sheets = [s for s in all_sheets if is_question_sheet(s)]
         if not question_sheets:
             st.warning("No question sheets found.")
             return
@@ -418,12 +429,14 @@ def individual_dashboard(gc):
         blocks = find_cuts_and_blocks(data)
         all_labels = [b["label"] for b in blocks]
 
+        # Define cuts for each report level, and always include region-wise for Statewide
         if level.startswith("A."):
             report_level = "Statewide"
             cuts = [
                 "Overall", "Gender-wise", "Age-wise", "Religion-wise", "Community-wise",
                 "Gender + Religion-wise", "Age + Religion-wise", "Age + Gender-wise",
-                "Community + Gender-wise", "Community + Religion-wise", "First-time Voters"
+                "Community + Gender-wise", "Community + Religion-wise", "First-time Voters",
+                "Region-wise (Malabar/Non Malabar)", "Region + Religion-wise", "Regionwise", "Region Wise"
             ]
         elif level.startswith("B."):
             report_level = "Region Wise"
@@ -446,42 +459,61 @@ def individual_dashboard(gc):
         if not block_labels:
             st.warning(f"No {report_level} cuts found in this question. Available cuts: {', '.join(all_labels)}")
             return
-        selected_block_label = st.selectbox("Select Block", block_labels)
-        block = next(b for b in blocks if b["label"] == selected_block_label)
-        df = extract_block_df(data, block)
 
-        if (
-            level.startswith("B.")  
-            or level.startswith("C.")  
-            or level.startswith("D.")  
-        ):
-            first_col = df.columns[0]
-            unique_splits = [v for v in df[first_col].unique() if pd.notna(v) and str(v).strip() != '']
-            if len(unique_splits) > 1:
-                selected_split = st.selectbox(
-                    f"Select {report_level.split()[0]}",
-                    unique_splits,
-                    key=f"split_{level}"
-                )
-                split_df = df[df[first_col] == selected_split].reset_index(drop=True)
+        # For Statewide (A), show all cuts (including Region-wise) as separate tables/graphs in order
+        if level.startswith("A."):
+            for block_label in block_labels:
+                block = next(b for b in blocks if b["label"] == block_label)
+                df = extract_block_df(data, block)
+                st.markdown(f'<div class="center-table"><h4 style="text-align:center">{block_label}</h4>', unsafe_allow_html=True)
+                styled_df = df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
+                st.dataframe(styled_df, height=min(400, 50 + 40 * len(df)))
+                st.markdown('</div>', unsafe_allow_html=True)
+                plot_horizontal_bar_plotly(df)
+                csv = df.to_csv(index=False).encode('utf-8')
+                st.download_button(f"Download CSV ({block_label})", csv, f"{selected_sheet}_{block_label}.csv", "text/csv")
+                pdf_file = dataframe_to_pdf(df, f"{selected_sheet} - {block_label}")
+                st.download_button(f"Download PDF ({block_label})", pdf_file, f"{selected_sheet}_{block_label}.pdf", "application/pdf")
+                st.markdown("---")
+        else:
+            selected_block_label = st.selectbox("Select Block", block_labels)
+            block = next(b for b in blocks if b["label"] == selected_block_label)
+            df = extract_block_df(data, block)
+
+            # Drill down for Region/District/AC
+            if (
+                level.startswith("B.")
+                or level.startswith("C.")
+                or level.startswith("D.")
+            ):
+                first_col = df.columns[0]
+                unique_splits = [v for v in df[first_col].unique() if pd.notna(v) and str(v).strip() != '']
+                if len(unique_splits) > 1:
+                    selected_split = st.selectbox(
+                        f"Select {report_level.split()[0]}",
+                        unique_splits,
+                        key=f"split_{level}"
+                    )
+                    split_df = df[df[first_col] == selected_split].reset_index(drop=True)
+                else:
+                    split_df = df
             else:
                 split_df = df
-        else:
-            split_df = df
 
-        st.markdown(f"### Data Table: {selected_sheet} - {selected_block_label}")
-        styled_df = split_df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line', 'background': '#f6f8fa'})
-        st.dataframe(styled_df, height=min(400, 50 + 40 * len(split_df)))
-        value_cols = get_value_columns(split_df)
-        if value_cols:
-            try:
-                plot_horizontal_bar_plotly(split_df)
-            except Exception:
-                pass
-        csv = split_df.to_csv(index=False).encode('utf-8')
-        st.download_button("Download CSV", csv, f"{selected_sheet}_{selected_block_label}.csv", "text/csv")
-        pdf_file = dataframe_to_pdf(split_df, f"{selected_sheet} - {selected_block_label}")
-        st.download_button("Download PDF", pdf_file, f"{selected_sheet}_{selected_block_label}.pdf", "application/pdf")
+            st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_sheet} - {selected_block_label}</h4>', unsafe_allow_html=True)
+            styled_df = split_df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
+            st.dataframe(styled_df, height=min(400, 50 + 40 * len(split_df)))
+            st.markdown('</div>', unsafe_allow_html=True)
+            value_cols = get_value_columns(split_df)
+            if value_cols:
+                try:
+                    plot_horizontal_bar_plotly(split_df)
+                except Exception:
+                    pass
+            csv = split_df.to_csv(index=False).encode('utf-8')
+            st.download_button("Download CSV", csv, f"{selected_sheet}_{selected_block_label}.csv", "text/csv")
+            pdf_file = dataframe_to_pdf(split_df, f"{selected_sheet} - {selected_block_label}")
+            st.download_button("Download PDF", pdf_file, f"{selected_sheet}_{selected_block_label}.pdf", "application/pdf")
     except Exception as e:
         st.error(f"Could not load individual survey report: {e}")
 
