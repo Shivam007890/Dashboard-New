@@ -62,14 +62,15 @@ def password_setup_form():
     return False
 
 def inject_custom_css():
+    # Teal + Purple color scheme
     st.markdown("""
     <style>
     .stApp {
-        background: linear-gradient(120deg, #f6f8fa 0%, #eaf1fb 100%) !important;
+        background: linear-gradient(120deg, #e0f7fa 0%, #f3e5f5 100%) !important;
         min-height: 100vh;
     }
     section[data-testid="stSidebar"] {
-        background: linear-gradient(135deg, #1a237e 0%, #3949ab 100%) !important;
+        background: linear-gradient(135deg, #008080 0%, #7c4dff 100%) !important;
     }
     .dashboard-title {
         font-size: 2.7rem;
@@ -77,7 +78,7 @@ def inject_custom_css():
         margin-top: 1.1em;
         margin-bottom: 0.1em;
         text-align: center;
-        background: linear-gradient(90deg, #3949ab 10%, #1976d2 60%, #64b5f6 100%);
+        background: linear-gradient(90deg, #008080 10%, #7c4dff 60%, #b388ff 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
@@ -94,7 +95,7 @@ def inject_custom_css():
     .section-header {
         font-size: 1.4rem;
         font-weight: 700;
-        background: linear-gradient(90deg, #1976d2 0%, #64b5f6 100%);
+        background: linear-gradient(90deg, #008080 0%, #7c4dff 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
@@ -111,7 +112,7 @@ def inject_custom_css():
         margin-bottom: 1em;
     }
     .stButton>button {
-        background: #1976d2;
+        background: #008080;
         color: #fff;
         border-radius: 8px;
         border: none;
@@ -119,12 +120,12 @@ def inject_custom_css():
         margin: 6px 0;
         font-size: 1rem;
         transition: background 0.25s, box-shadow 0.25s;
-        box-shadow: 0 2px 8px #90caf9c0;
+        box-shadow: 0 2px 8px #b388ff88;
     }
     .stButton>button:hover {
-        background: linear-gradient(90deg, #1565c0 0%, #64b5f6 100%);
+        background: linear-gradient(90deg, #26c6da 0%, #7c4dff 100%);
         color: #fff;
-        box-shadow: 0 2px 16px #1976d2a4;
+        box-shadow: 0 2px 16px #7c4dff66;
     }
     .stDataFrame {background: rgba(255,255,255,0.98);}
     </style>
@@ -295,11 +296,15 @@ def dataframe_to_pdf(df, title):
 def plot_horizontal_bar_plotly(df, key=None):
     label_col = df.columns[0]
     df = df[~df[label_col].astype(str).str.lower().str.contains('difference')]
+    # Teal/Purple palette
+    color_palette = [
+        "#80cbc4", "#7e57c2", "#26a69a", "#9575cd", "#4dd0e1", "#ab47bc",
+        "#008080", "#512da8", "#b2dfdb"
+    ]
     exclude_keywords = ['sample', 'total', 'grand']
     value_cols = [col for col in df.columns[1:] if not any(k in col.strip().lower() for k in exclude_keywords)]
-    blue_scale = ["#f7fbff", "#c6dbef", "#6aaed6", "#2070b4", "#08306b"]
     n_bars = df.shape[0] if len(value_cols) == 1 else len(value_cols)
-    colors = blue_scale * ((n_bars // len(blue_scale)) + 1)
+    colors = color_palette * ((n_bars // len(color_palette)) + 1)
     for col in value_cols:
         try:
             df[col] = df[col].astype(str).str.replace('%', '', regex=False).astype(float)
@@ -319,7 +324,7 @@ def plot_horizontal_bar_plotly(df, key=None):
             title=f"Distribution by {label_col}",
             xaxis_title=value_col, yaxis_title=label_col,
             showlegend=False, bargap=0.2,
-            plot_bgcolor="#f7fbff", paper_bgcolor="#f7fbff"
+            plot_bgcolor="#f3e5f5", paper_bgcolor="#e0f7fa"
         )
         fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     else:
@@ -333,7 +338,7 @@ def plot_horizontal_bar_plotly(df, key=None):
             title=f"Distribution by {label_col}",
             xaxis_title='Value', yaxis_title=label_col,
             bargap=0.2, legend_title="Category",
-            plot_bgcolor="#f7fbff", paper_bgcolor="#f7fbff"
+            plot_bgcolor="#f3e5f5", paper_bgcolor="#e0f7fa"
         )
         fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     st.plotly_chart(fig, use_container_width=True, key=key)
@@ -368,14 +373,14 @@ def render_html_centered_table(df):
     html += '<table style="margin-left:auto;margin-right:auto;border-collapse:collapse;width:100%;">'
     # Column headers
     html += '<thead><tr>'
-    html += f'<th style="border:1px solid #ddd;background:#f9f9f9;"></th>'
+    html += f'<th style="border:1px solid #ddd;background:#e0f7fa;"></th>'
     for col in df.columns:
-        html += f'<th style="border:1px solid #ddd;background:#f9f9f9;">{col}</th>'
+        html += f'<th style="border:1px solid #ddd;background:#e0f7fa;">{col}</th>'
     html += '</tr></thead><tbody>'
     # Data rows
     for idx, row in df.iterrows():
         html += '<tr>'
-        html += f'<td style="border:1px solid #ddd;background:#f9f9f9;">{idx}</td>'
+        html += f'<td style="border:1px solid #ddd;background:#e0f7fa;">{idx}</td>'
         for cell in row:
             html += f'<td style="border:1px solid #ddd;">{cell if pd.notna(cell) else ""}</td>'
         html += '</tr>'
@@ -386,21 +391,22 @@ def show_centered_dataframe(df, height=400):
     render_html_centered_table(df)
 
 def get_entity_and_cut_options(blocks, prefix):
+    # Robustly parse: entity = after prefix and before first '+', cut = after '+', or "Summary"
     entity_to_cuts = {}
     for b in blocks:
         if b["label"].startswith(prefix + " "):
-            # Extract entity name and cut
-            match = re.match(rf"{prefix}\s+([^\+]+?)(?:\s*\+\s*(.*))?$", b["label"])
-            if match:
-                entity = match.group(1).strip()
-                cut = match.group(2).strip() if match.group(2) else "Summary"
-                entity_to_cuts.setdefault(entity, []).append((cut, b["label"]))
+            label = b["label"][len(prefix):].strip()   # Strip prefix
+            if '+' in label:
+                entity, cut = [part.strip() for part in label.split('+', 1)]
+            else:
+                entity, cut = label.strip(), "Summary"
+            entity_to_cuts.setdefault(entity, []).append((cut, b["label"]))
     return entity_to_cuts
 
 def main_dashboard(gc):
     inject_custom_css()
-    st.markdown("<h1 style='text-align: center; color: grey;'>Kerala Survey Dashboard</h1>", unsafe_allow_html=True)
-    st.markdown("<h2 style='text-align: center; color: black;'>Weekly and Comparative Survey Analysis</h2>", unsafe_allow_html=True)
+    st.markdown("<h1 class='dashboard-title'>Kerala Survey Dashboard</h1>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center; color: #512da8;'>Weekly and Comparative Survey Analysis</h2>", unsafe_allow_html=True)
     map_path = "kerala_political_map.png"
     if os.path.exists(map_path):
         st.markdown(
@@ -432,7 +438,6 @@ def comparative_dashboard(gc):
             st.warning("No comparative analysis sheets found.")
             return
 
-        # Sort comparative_sheets by month (ensure correct order for difference row)
         sorted_sheets = sorted(comparative_sheets, key=extract_month_number)
         def clean_comp_name(s):
             if s.lower().startswith("comp_"):
@@ -449,7 +454,7 @@ def comparative_dashboard(gc):
         block = blocks[0]
         df = extract_block_df(data, block)
         st.markdown('<div class="center-table">', unsafe_allow_html=True)
-        st.markdown("<h4 style='text-align: center;'>Comparative Results</h4>", unsafe_allow_html=True)
+        st.markdown("<h4 style='text-align: center; color: #008080;'>Comparative Results</h4>", unsafe_allow_html=True)
         show_centered_dataframe(df, height=min(400, 50 + 40 * len(df)))
         st.markdown('</div>', unsafe_allow_html=True)
         plot_horizontal_bar_plotly(df, key=f"comparative_{selected_sheet}")
@@ -518,14 +523,14 @@ def individual_dashboard(gc):
                         if select_all == "Select All":
                             for entity_name in entity_names:
                                 cuts_for_entity = entity_to_cuts[entity_name]
-                                st.markdown(f"<h5 style='text-align:center'>{entity_name}</h5>", unsafe_allow_html=True)
+                                st.markdown(f"<h5 style='text-align:center;color:#008080'>{entity_name}</h5>", unsafe_allow_html=True)
                                 for cut, label in cuts_for_entity:
                                     block = next((b for b in blocks if b["label"] == label), None)
                                     df = extract_block_df(data, block) if block else pd.DataFrame()
                                     if df.empty:
                                         st.warning(f"No data available for: {label}")
                                     else:
-                                        st.markdown(f'<div class="center-table"><h6 style="text-align:center">{cut}</h6>', unsafe_allow_html=True)
+                                        st.markdown(f'<div class="center-table"><h6 style="text-align:center; color:#7c4dff">{cut}</h6>', unsafe_allow_html=True)
                                         show_centered_dataframe(df, height=min(400, 50 + 40 * len(df)))
                                         st.markdown('</div>', unsafe_allow_html=True)
                                         plot_horizontal_bar_plotly(df=df, key=f"{prefix}_{entity_name}_{cut}_allplot")
@@ -541,7 +546,7 @@ def individual_dashboard(gc):
                             if df.empty:
                                 st.warning(f"No data available for: {label}")
                             else:
-                                st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_entity} - {selected_cut}</h4>', unsafe_allow_html=True)
+                                st.markdown(f'<div class="center-table"><h4 style="text-align:center;color:#008080">{selected_entity} - {selected_cut}</h4>', unsafe_allow_html=True)
                                 show_centered_dataframe(df, height=min(400, 50 + 40 * len(df)))
                                 st.markdown('</div>', unsafe_allow_html=True)
                                 plot_horizontal_bar_plotly(df=df, key=f"{prefix}_{selected_entity}_{selected_cut}_singleplot")
@@ -557,7 +562,7 @@ def individual_dashboard(gc):
                         if df.empty:
                             st.warning(f"No data available for: {label}")
                         else:
-                            st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_entity} - {selected_cut}</h4>', unsafe_allow_html=True)
+                            st.markdown(f'<div class="center-table"><h4 style="text-align:center;color:#7c4dff">{selected_entity} - {selected_cut}</h4>', unsafe_allow_html=True)
                             show_centered_dataframe(df, height=min(400, 50 + 40 * len(df)))
                             st.markdown('</div>', unsafe_allow_html=True)
                             plot_horizontal_bar_plotly(df=df, key=f"{prefix}_{selected_entity}_{selected_cut}_regionplot")
