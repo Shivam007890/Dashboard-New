@@ -380,7 +380,7 @@ def extract_month_number(tab_name):
 def main_dashboard(gc):
     inject_custom_css()
     st.markdown("<h1 style='text-align: center; color: grey;'>Kerala Survey Dashboard</h1>", unsafe_allow_html=True)
-    st.markdown("<h2 style='text-align: center; color: black;'>Weekly and Comparative Survey Analysis</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center; color: black;'>Survey Analysis</h2>", unsafe_allow_html=True)
     map_path = "kerala_political_map.png"
     if os.path.exists(map_path):
         st.markdown(
