@@ -352,12 +352,14 @@ def plot_comparative_with_ticker(df, key=None):
         orientation='h', barmode='group', text='Value',
         color_discrete_sequence=px.colors.qualitative.Plotly
     )
-    # Add ticker annotation for each candidate (latest row)
+    # For each candidate, add ticker annotation ONLY for the latest tab (e.g. June)
     if df.shape[0] >= 2:
         latest_tab = df.loc[df.shape[0]-1, label_col]
         for i, candidate in enumerate(candidate_cols):
             val = df.loc[df.shape[0]-1, candidate]
             ticker = diff[candidate]
+            if pd.isna(val) or pd.isna(ticker):
+                continue
             if ticker > 0:
                 arrow = "↑"
                 color = "green"
@@ -375,7 +377,7 @@ def plot_comparative_with_ticker(df, key=None):
                 font=dict(color=color, size=16, family="Arial"),
                 xanchor='left',
                 yanchor='middle',
-                xshift=10
+                xshift=8 # shift a bit right so it's not overlapping value
             )
     fig.update_layout(
         title=f"Distribution by {label_col} (with change ticker)",
