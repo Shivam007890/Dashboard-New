@@ -336,64 +336,52 @@ def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
         fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     st.plotly_chart(fig, use_container_width=True, key=key)
 
-def plot_comparative_with_ticker(df, key=None):
+def plot_comparative_with_lines(df, key_prefix="comparative"):
     label_col = df.columns[0]
     candidate_cols = df.columns[1:]
     df = df.reset_index(drop=True)
+
+    # Clean numeric values (remove percent if any)
     def to_num(s):
         try:
             return float(str(s).replace('%','').strip())
         except Exception:
             return float('nan')
-    # Calculate difference (last row - previous row) for each candidate
-    if df.shape[0] >= 2:
-        vals_last = df.loc[df.shape[0]-1, candidate_cols].apply(to_num)
-        vals_prev = df.loc[df.shape[0]-2, candidate_cols].apply(to_num)
-        diff = vals_last - vals_prev
-    else:
-        diff = pd.Series([0]*len(candidate_cols), index=candidate_cols)
+    df_clean = df.copy()
+    for col in candidate_cols:
+        df_clean[col] = df_clean[col].apply(to_num)
 
-    long_df = df.melt(id_vars=label_col, value_vars=candidate_cols, var_name='Candidate', value_name='Value')
-    fig = px.bar(
-        long_df, y=label_col, x='Value', color='Candidate',
-        orientation='h', barmode='group', text='Value',
+    # Line plot (trend for each candidate)
+    long_df = df_clean.melt(id_vars=label_col, value_vars=candidate_cols, var_name='Candidate', value_name='Value')
+    fig_line = px.line(
+        long_df,
+        x=label_col,
+        y="Value",
+        color="Candidate",
+        markers=True,
+        title="Candidate Trend Across Tabs/Sheets",
         color_discrete_sequence=px.colors.qualitative.Plotly
     )
-    # For each candidate, add ticker annotation ONLY for the latest tab (e.g. June)
-    if df.shape[0] >= 2:
-        latest_tab = df.loc[df.shape[0]-1, label_col]
-        for i, candidate in enumerate(candidate_cols):
-            val = to_num(df.loc[df.shape[0]-1, candidate])
-            ticker = diff[candidate]
-            if pd.isna(val) or pd.isna(ticker):
-                continue
-            if ticker > 0:
-                arrow = "↑"
-                color = "green"
-            elif ticker < 0:
-                arrow = "↓"
-                color = "red"
-            else:
-                arrow = "→"
-                color = "gray"
-            ann_text = f"{arrow} {ticker:+.2f}"
-            fig.add_annotation(
-                x=val, y=latest_tab,
-                text=ann_text,
-                showarrow=False,
-                font=dict(color=color, size=16, family="Arial"),
-                xanchor='left',
-                yanchor='middle',
-                xshift=8 # shift a bit right so it's not overlapping value
-            )
-    fig.update_layout(
-        title=f"Distribution by {label_col} (with change ticker)",
-        xaxis_title='', yaxis_title=label_col,
-        bargap=0.2, legend_title="Candidate",
-        plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa"
+    fig_line.update_layout(
+        plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa",
+        xaxis_title=label_col, yaxis_title="Value (%)"
     )
-    fig.update_traces(texttemplate='%{text}', textposition='outside')
-    st.plotly_chart(fig, use_container_width=True, key=key)
+
+    # Bar plot (all data, as before)
+    fig_bar = px.bar(
+        long_df, y=label_col, x='Value', color='Candidate',
+        orientation='h', barmode='group', text='Value',
+        color_discrete_sequence=px.colors.qualitative.Plotly,
+        title=f"Distribution by {label_col}",
+    )
+    fig_bar.update_layout(
+        plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa",
+        bargap=0.2, legend_title="Candidate"
+    )
+    fig_bar.update_traces(texttemplate='%{text:.1f}', textposition='outside')
+
+    st.plotly_chart(fig_line, use_container_width=True, key=f"{key_prefix}_line")
+    st.plotly_chart(fig_bar, use_container_width=True, key=f"{key_prefix}_bar")
 
 def is_question_sheet(ws):
     name = ws.title.strip().lower()
@@ -530,7 +518,7 @@ def comparative_dashboard(gc):
         st.markdown("<h4 style='text-align: center; color: #22356f;'>Comparative Results</h4>", unsafe_allow_html=True)
         show_centered_dataframe(df, height=min(400, 50 + 40 * len(df)))
         st.markdown('</div>', unsafe_allow_html=True)
-        plot_comparative_with_ticker(df, key=f"comparative_{selected_sheet}")
+        plot_comparative_with_lines(df, key_prefix=f"comparative_{selected_sheet}")
         csv = df.to_csv(index=False).encode('utf-8')
         st.download_button("Download CSV", csv, f"{selected_sheet}_comparative.csv", "text/csv")
         pdf_file = dataframe_to_pdf(df, f"Comparative Analysis - {selected_sheet}")
