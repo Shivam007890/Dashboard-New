@@ -340,9 +340,16 @@ def plot_comparative_with_ticker(df, key=None):
     label_col = df.columns[0]
     candidate_cols = df.columns[1:]
     df = df.reset_index(drop=True)
+    def to_num(s):
+        try:
+            return float(str(s).replace('%','').strip())
+        except Exception:
+            return float('nan')
     # Calculate difference (last row - previous row) for each candidate
     if df.shape[0] >= 2:
-        diff = df.loc[df.shape[0]-1, candidate_cols].astype(float) - df.loc[df.shape[0]-2, candidate_cols].astype(float)
+        vals_last = df.loc[df.shape[0]-1, candidate_cols].apply(to_num)
+        vals_prev = df.loc[df.shape[0]-2, candidate_cols].apply(to_num)
+        diff = vals_last - vals_prev
     else:
         diff = pd.Series([0]*len(candidate_cols), index=candidate_cols)
 
@@ -356,7 +363,7 @@ def plot_comparative_with_ticker(df, key=None):
     if df.shape[0] >= 2:
         latest_tab = df.loc[df.shape[0]-1, label_col]
         for i, candidate in enumerate(candidate_cols):
-            val = df.loc[df.shape[0]-1, candidate]
+            val = to_num(df.loc[df.shape[0]-1, candidate])
             ticker = diff[candidate]
             if pd.isna(val) or pd.isna(ticker):
                 continue
@@ -369,7 +376,7 @@ def plot_comparative_with_ticker(df, key=None):
             else:
                 arrow = "→"
                 color = "gray"
-            ann_text = f"{arrow} {ticker:+.1f}"
+            ann_text = f"{arrow} {ticker:+.2f}"
             fig.add_annotation(
                 x=val, y=latest_tab,
                 text=ann_text,
@@ -385,7 +392,7 @@ def plot_comparative_with_ticker(df, key=None):
         bargap=0.2, legend_title="Candidate",
         plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa"
     )
-    fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
+    fig.update_traces(texttemplate='%{text}', textposition='outside')
     st.plotly_chart(fig, use_container_width=True, key=key)
 
 def is_question_sheet(ws):
