@@ -230,20 +230,6 @@ def extract_block_df(data, block):
         st.warning(f"Could not parse block as table: {err}")
         return pd.DataFrame()
 
-def get_value_columns(df):
-    skip_keywords = ['sample', 'total', 'grand']
-    cols = []
-    for col in df.columns:
-        col_lc = col.strip().lower()
-        if any(k in col_lc for k in skip_keywords):
-            continue
-        try:
-            pd.to_numeric(df[col].astype(str).str.replace('%', '', regex=False), errors='raise')
-            cols.append(col)
-        except Exception:
-            continue
-    return cols
-
 def dataframe_to_pdf(df, title):
     pdf = FPDF()
     pdf.add_page()
@@ -399,6 +385,18 @@ def render_html_centered_table(df):
 def show_centered_dataframe(df, height=400):
     render_html_centered_table(df)
 
+def get_entity_and_cut_options(blocks, prefix):
+    entity_to_cuts = {}
+    for b in blocks:
+        if b["label"].startswith(prefix + " "):
+            # Extract entity name and cut
+            match = re.match(rf"{prefix}\s+([^\+]+?)(?:\s*\+\s*(.*))?$", b["label"])
+            if match:
+                entity = match.group(1).strip()
+                cut = match.group(2).strip() if match.group(2) else "Summary"
+                entity_to_cuts.setdefault(entity, []).append((cut, b["label"]))
+    return entity_to_cuts
+
 def main_dashboard(gc):
     inject_custom_css()
     st.markdown("<h1 style='text-align: center; color: grey;'>Kerala Survey Dashboard</h1>", unsafe_allow_html=True)
@@ -426,18 +424,41 @@ def main_dashboard(gc):
     elif choice == "Individual Survey Reports":
         individual_dashboard(gc)
 
-def get_entity_and_cut_options(blocks, prefix):
-    # Build mapping: entity_name -> [cut1, cut2,...]
-    entity_to_cuts = {}
-    for b in blocks:
-        if b["label"].startswith(prefix + " "):
-            # Extract entity name and cut
-            match = re.match(rf"{prefix}\s+([^\+]+?)(?:\s*\+\s*(.*))?$", b["label"])
-            if match:
-                entity = match.group(1).strip()
-                cut = match.group(2).strip() if match.group(2) else "Summary"
-                entity_to_cuts.setdefault(entity, []).append((cut, b["label"]))
-    return entity_to_cuts
+def comparative_dashboard(gc):
+    try:
+        all_sheets = [ws.title for ws in gc.open(SHEET_NAME).worksheets()]
+        comparative_sheets = [title for title in all_sheets if title.lower().startswith("comp_") or title.lower().startswith("comparative analysis")]
+        if not comparative_sheets:
+            st.warning("No comparative analysis sheets found.")
+            return
+
+        # Sort comparative_sheets by month (ensure correct order for difference row)
+        sorted_sheets = sorted(comparative_sheets, key=extract_month_number)
+        def clean_comp_name(s):
+            if s.lower().startswith("comp_"):
+                return s[5:]
+            return s
+        question_labels = [clean_comp_name(s) for s in sorted_sheets]
+        selected_idx = st.selectbox("Select Question for Comparative Analysis", list(range(len(question_labels))), format_func=lambda i: question_labels[i])
+        selected_sheet = sorted_sheets[selected_idx]
+        data = load_pivot_data(gc, SHEET_NAME, selected_sheet)
+        blocks = find_cuts_and_blocks(data)
+        if not blocks:
+            st.warning("No data blocks found in this sheet.")
+            return
+        block = blocks[0]
+        df = extract_block_df(data, block)
+        st.markdown('<div class="center-table">', unsafe_allow_html=True)
+        st.markdown("<h4 style='text-align: center;'>Comparative Results</h4>", unsafe_allow_html=True)
+        show_centered_dataframe(df, height=min(400, 50 + 40 * len(df)))
+        st.markdown('</div>', unsafe_allow_html=True)
+        plot_horizontal_bar_plotly(df, key=f"comparative_{selected_sheet}")
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.download_button("Download CSV", csv, f"{selected_sheet}_comparative.csv", "text/csv")
+        pdf_file = dataframe_to_pdf(df, f"Comparative Analysis - {selected_sheet}")
+        st.download_button("Download PDF", pdf_file, f"{selected_sheet}_comparative.pdf", "application/pdf")
+    except Exception as e:
+        st.error(f"Could not load comparative analysis: {e}")
 
 def individual_dashboard(gc):
     st.markdown('<div class="section-header">Individual Survey Reports</div>', unsafe_allow_html=True)
@@ -459,14 +480,12 @@ def individual_dashboard(gc):
         blocks = find_cuts_and_blocks(data)
         all_labels = [b["label"] for b in blocks]
 
-        # Main expanders for each section as before
         for prefix, display_name in all_levels:
             block_labels = [l for l in all_labels if l.startswith(prefix+" ")]
             if not block_labels:
                 st.info(f"No cuts found for {display_name}.")
                 continue
             with st.expander(f"{display_name} ({prefix})", expanded=True if prefix == "State" else False):
-                # For State, show as before
                 if prefix == "State":
                     selected_cut = st.selectbox(
                         f"Select Cut for {display_name}",
@@ -494,8 +513,6 @@ def individual_dashboard(gc):
                     if not entity_names:
                         st.info(f"No {prefix} names found in this sheet.")
                         continue
-
-                    # For District, Zone, AC: Select All or Specific entity
                     if prefix in ["District", "Zone", "AC"]:
                         select_all = st.radio(f"Show all {prefix}s or select individually?", ["Select One", "Select All"], key=f"{prefix}_all_radio")
                         if select_all == "Select All":
