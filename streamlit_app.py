@@ -379,7 +379,8 @@ def extract_month_number(tab_name):
 
 def main_dashboard(gc):
     inject_custom_css()
-    st.markdown('<div class="dashboard-title">🤖 Kerala Survey Dashboard</div>', unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center; color: grey;'>Kerala Survey Dashboard</h1>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center; color: black;'>Weekly and Comparative Survey Analysis</h2>", unsafe_allow_html=True)
     map_path = "kerala_political_map.png"
     if os.path.exists(map_path):
         st.markdown(
@@ -428,7 +429,7 @@ def comparative_dashboard(gc):
         block = blocks[0]
         df = extract_block_df(data, block)
         st.markdown('<div class="center-table">', unsafe_allow_html=True)
-        st.markdown("### Comparative Results")
+        st.markdown("<h4 style='text-align: center;'>Comparative Results</h4>", unsafe_allow_html=True)
         styled_df = df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
         st.dataframe(styled_df, height=min(400, 50 + 40 * len(df)))
         st.markdown('</div>', unsafe_allow_html=True)
