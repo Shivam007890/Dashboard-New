@@ -9,7 +9,6 @@ import json
 import tempfile
 import plotly.express as px
 import base64
-import re
 
 SHEET_NAME = "Kerala Weekly Survey Automation Dashboard Test Run"
 
@@ -65,11 +64,11 @@ def inject_custom_css():
     st.markdown("""
     <style>
     .stApp {
-        background: linear-gradient(135deg, #22356f 0%, #fdbb2d 100%) !important;
+        background: #f5f7fa !important;
         min-height: 100vh;
     }
     section[data-testid="stSidebar"] {
-        background: linear-gradient(135deg, #22356f 0%, #fdbb2d 100%) !important;
+        background: #f0f0f0 !important;
     }
     .dashboard-title {
         font-size: 2.7rem;
@@ -77,10 +76,7 @@ def inject_custom_css():
         margin-top: 1.1em;
         margin-bottom: 0.1em;
         text-align: center;
-        background: linear-gradient(90deg, #22356f 10%, #fdbb2d 90%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
+        color: #2d3748;
         font-family: 'Segoe UI', 'Roboto', Arial, sans-serif;
         letter-spacing: 0.02em;
     }
@@ -94,10 +90,7 @@ def inject_custom_css():
     .section-header {
         font-size: 1.4rem;
         font-weight: 700;
-        background: linear-gradient(90deg, #22356f 0%, #fdbb2d 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
+        color: #22356f;
         margin-top: 1.1em;
         margin-bottom: 0.4em;
         text-align: center;
@@ -112,19 +105,19 @@ def inject_custom_css():
     }
     .stButton>button {
         background: #22356f;
-        color: #fdbb2d;
+        color: #ffd700;
         border-radius: 8px;
         border: none;
         font-weight: 600;
         margin: 6px 0;
         font-size: 1rem;
         transition: background 0.25s, box-shadow 0.25s;
-        box-shadow: 0 2px 8px #fdbb2d88;
+        box-shadow: 0 2px 8px #ffd70088;
     }
     .stButton>button:hover {
-        background: linear-gradient(90deg, #fdbb2d 0%, #22356f 100%);
+        background: linear-gradient(90deg, #ffd700 0%, #22356f 100%);
         color: #22356f;
-        box-shadow: 0 2px 16px #fdbb2d66;
+        box-shadow: 0 2px 16px #ffd70066;
     }
     .stDataFrame {background: rgba(255,255,255,0.98);}
     </style>
@@ -192,11 +185,9 @@ def find_cuts_and_blocks(data):
                     "data_start": i+2,
                     "data_end": j
                 })
-    # Fallback: if no blocks found, treat first non-empty header row as block
     if not blocks:
         for i, row in enumerate(data):
             if sum(bool(str(cell).strip()) for cell in row) >= 2:
-                # Assume header at i, data from i+1 until empty row
                 j = i+1
                 while j < len(data) and any(str(cell).strip() for cell in data[j]):
                     j += 1
@@ -322,7 +313,7 @@ def plot_horizontal_bar_plotly(df, key=None):
             title=f"Distribution by {label_col}",
             xaxis_title=value_col, yaxis_title=label_col,
             showlegend=False, bargap=0.2,
-            plot_bgcolor="#fdbb2d", paper_bgcolor="#22356f"
+            plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa"
         )
         fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     else:
@@ -336,7 +327,7 @@ def plot_horizontal_bar_plotly(df, key=None):
             title=f"Distribution by {label_col}",
             xaxis_title='Value', yaxis_title=label_col,
             bargap=0.2, legend_title="Category",
-            plot_bgcolor="#fdbb2d", paper_bgcolor="#22356f"
+            plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa"
         )
         fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     st.plotly_chart(fig, use_container_width=True, key=key)
@@ -370,13 +361,13 @@ def render_html_centered_table(df):
     html = '<style>th, td { text-align:center !important; }</style>'
     html += '<table style="margin-left:auto;margin-right:auto;border-collapse:collapse;width:100%;">'
     html += '<thead><tr>'
-    html += f'<th style="border:1px solid #ddd;background:#fdbb2d;"></th>'
+    html += f'<th style="border:1px solid #ddd;background:#f5f7fa;"></th>'
     for col in df.columns:
-        html += f'<th style="border:1px solid #ddd;background:#fdbb2d;">{col}</th>'
+        html += f'<th style="border:1px solid #ddd;background:#f5f7fa;">{col}</th>'
     html += '</tr></thead><tbody>'
     for idx, row in df.iterrows():
         html += '<tr>'
-        html += f'<td style="border:1px solid #ddd;background:#fdbb2d;">{idx}</td>'
+        html += f'<td style="border:1px solid #ddd;background:#f5f7fa;">{idx}</td>'
         for cell in row:
             html += f'<td style="border:1px solid #ddd;">{cell if pd.notna(cell) else ""}</td>'
         html += '</tr>'
@@ -385,6 +376,27 @@ def render_html_centered_table(df):
 
 def show_centered_dataframe(df, height=400):
     render_html_centered_table(df)
+
+def dashboard_geo_section(blocks, block_prefix, pivot_data, geo_name):
+    geo_blocks = [b for b in blocks if b["label"].lower().startswith(block_prefix.lower())]
+    if not geo_blocks:
+        st.info(f"No block found with label starting with {block_prefix}.")
+        return
+    block_labels = [b["label"] for b in geo_blocks]
+    selected_block_label = st.selectbox(f"Select {geo_name} Report Type", block_labels)
+    block = next(b for b in geo_blocks if b["label"] == selected_block_label)
+    df = extract_block_df(pivot_data, block)
+    if df.empty:
+        st.warning(f"No data table found for {selected_block_label}.")
+        return
+    geo_col = df.columns[0]
+    geo_values = df[geo_col].dropna().unique().tolist()
+    selection = st.multiselect(f"Select {geo_name}(s) to display", geo_values, default=geo_values)
+    filtered_df = df[df[geo_col].isin(selection)]
+    st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_block_label}</h4>', unsafe_allow_html=True)
+    show_centered_dataframe(filtered_df)
+    st.markdown('</div>', unsafe_allow_html=True)
+    plot_horizontal_bar_plotly(filtered_df, key=f"{block_prefix}_{selected_block_label}_geo_summary_plot")
 
 def main_dashboard(gc):
     inject_custom_css()
@@ -448,24 +460,6 @@ def comparative_dashboard(gc):
     except Exception as e:
         st.error(f"Could not load comparative analysis: {e}")
 
-def dashboard_geo_section(blocks, block_label, pivot_data, geo_name):
-    block = next((b for b in blocks if b["label"].lower() == block_label.lower()), None)
-    if not block:
-        st.info(f"No block found with label {block_label}.")
-        return
-    df = extract_block_df(pivot_data, block)
-    if df.empty:
-        st.warning(f"No data table found for {block_label}.")
-        return
-    geo_col = df.columns[0]
-    geo_values = df[geo_col].dropna().unique().tolist()
-    selection = st.multiselect(f"Select {geo_name}(s) to display", geo_values, default=geo_values)
-    filtered_df = df[df[geo_col].isin(selection)]
-    st.markdown(f'<div class="center-table"><h4 style="text-align:center">{block_label} Summary</h4>', unsafe_allow_html=True)
-    show_centered_dataframe(filtered_df)
-    st.markdown('</div>', unsafe_allow_html=True)
-    plot_horizontal_bar_plotly(filtered_df, key=f"{block_label}_geo_summary_plot")
-
 def individual_dashboard(gc):
     st.markdown('<div class="section-header">Individual Survey Reports</div>', unsafe_allow_html=True)
     try:
@@ -481,7 +475,6 @@ def individual_dashboard(gc):
 
         # State summary and state cuts
         with st.expander("A. Individual State Wide Survey Reports (State)", expanded=True):
-            # Find all blocks with "State" or "State + ..." as label
             state_blocks = [b for b in blocks if b["label"].lower().startswith("state")]
             for block in state_blocks:
                 df = extract_block_df(data, block)
@@ -492,18 +485,16 @@ def individual_dashboard(gc):
                 plot_horizontal_bar_plotly(df, key=f"state_{block['label']}_plot")
                 st.markdown("---")
 
-        # Geo sections: District, Zone, Region, AC
         geo_sections = [
             ("District", "District"),
             ("Zone", "Zone"),
             ("Region", "Region"),
             ("AC", "Assembly Constituency"),
         ]
-        for block_label, geo_name in geo_sections:
-            with st.expander(f"{geo_name} Wise Survey Reports ({block_label})", expanded=False):
-                dashboard_geo_section(blocks, block_label, data, geo_name)
+        for block_prefix, geo_name in geo_sections:
+            with st.expander(f"{geo_name} Wise Survey Reports ({block_prefix})", expanded=False):
+                dashboard_geo_section(blocks, block_prefix, data, geo_name)
 
-        # Other cuts (Religion, Gender, Age, Community) if present but not as state cuts
         cut_labels = ["Religion", "Gender", "Age", "Community"]
         other_cuts = [b for b in blocks if any(cl.lower() == b["label"].lower() for cl in cut_labels)]
         if other_cuts:
