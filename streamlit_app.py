@@ -283,17 +283,21 @@ def dataframe_to_pdf(df, title):
     pdf_bytes = pdf.output(dest='S').encode('latin1')
     return BytesIO(pdf_bytes)
 
-def plot_horizontal_bar_plotly(df, key=None):
+def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
     label_col = df.columns[0]
     df = df[~df[label_col].astype(str).str.lower().str.contains('difference')]
-    color_palette = [
-        "#1976d2", "#fdbb2d", "#22356f", "#7b1fa2", "#0288d1", "#c2185b",
-        "#ffb300", "#388e3c", "#8d6e63"
-    ]
     exclude_keywords = ['sample', 'total', 'grand']
     value_cols = [col for col in df.columns[1:] if not any(k in col.strip().lower() for k in exclude_keywords)]
+
+    if colorway == "plotly":
+        colors = px.colors.qualitative.Plotly
+    else:
+        colors = [
+            "#1976d2", "#fdbb2d", "#22356f", "#7b1fa2", "#0288d1", "#c2185b",
+            "#ffb300", "#388e3c", "#8d6e63"
+        ]
     n_bars = df.shape[0] if len(value_cols) == 1 else len(value_cols)
-    colors = color_palette * ((n_bars // len(color_palette)) + 1)
+    colors = colors * ((n_bars // len(colors)) + 1)
     for col in value_cols:
         try:
             df[col] = df[col].astype(str).str.replace('%', '', regex=False).astype(float)
@@ -391,12 +395,27 @@ def dashboard_geo_section(blocks, block_prefix, pivot_data, geo_name):
         return
     geo_col = df.columns[0]
     geo_values = df[geo_col].dropna().unique().tolist()
-    selection = st.multiselect(f"Select {geo_name}(s) to display", geo_values, default=geo_values)
+
+    select_mode = st.radio(
+        f"Show all {geo_name}s or select individually?",
+        ["Select All", "Select One"],
+        horizontal=True,
+        key=f"{block_prefix}_select_mode"
+    )
+    if select_mode == "Select All":
+        selection = geo_values
+    else:
+        selection = st.selectbox(f"Select {geo_name}", geo_values, key=f"{block_prefix}_single_select")
+        if selection:
+            selection = [selection]
+        else:
+            selection = []
+
     filtered_df = df[df[geo_col].isin(selection)]
     st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_block_label}</h4>', unsafe_allow_html=True)
     show_centered_dataframe(filtered_df)
     st.markdown('</div>', unsafe_allow_html=True)
-    plot_horizontal_bar_plotly(filtered_df, key=f"{block_prefix}_{selected_block_label}_geo_summary_plot")
+    plot_horizontal_bar_plotly(filtered_df, key=f"{block_prefix}_{selected_block_label}_geo_summary_plot", colorway="plotly")
 
 def main_dashboard(gc):
     inject_custom_css()
@@ -452,7 +471,7 @@ def comparative_dashboard(gc):
         st.markdown("<h4 style='text-align: center; color: #22356f;'>Comparative Results</h4>", unsafe_allow_html=True)
         show_centered_dataframe(df, height=min(400, 50 + 40 * len(df)))
         st.markdown('</div>', unsafe_allow_html=True)
-        plot_horizontal_bar_plotly(df, key=f"comparative_{selected_sheet}")
+        plot_horizontal_bar_plotly(df, key=f"comparative_{selected_sheet}", colorway="plotly")
         csv = df.to_csv(index=False).encode('utf-8')
         st.download_button("Download CSV", csv, f"{selected_sheet}_comparative.csv", "text/csv")
         pdf_file = dataframe_to_pdf(df, f"Comparative Analysis - {selected_sheet}")
@@ -482,7 +501,7 @@ def individual_dashboard(gc):
                 st.markdown(f'<div class="center-table"><h4 style="text-align:center">{block["label"]}</h4>', unsafe_allow_html=True)
                 show_centered_dataframe(df)
                 st.markdown('</div>', unsafe_allow_html=True)
-                plot_horizontal_bar_plotly(df, key=f"state_{block['label']}_plot")
+                plot_horizontal_bar_plotly(df, key=f"state_{block['label']}_plot", colorway="plotly")
                 st.markdown("---")
 
         geo_sections = [
@@ -505,7 +524,7 @@ def individual_dashboard(gc):
                     st.markdown(f'<div class="center-table"><h4 style="text-align:center">{block["label"]}</h4>', unsafe_allow_html=True)
                     show_centered_dataframe(df)
                     st.markdown('</div>', unsafe_allow_html=True)
-                    plot_horizontal_bar_plotly(df, key=f"cut_{block['label']}_plot")
+                    plot_horizontal_bar_plotly(df, key=f"cut_{block['label']}_plot", colorway="plotly")
                     st.markdown("---")
     except Exception as e:
         st.error(f"Could not load individual survey report: {e}")
