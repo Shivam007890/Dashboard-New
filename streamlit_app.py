@@ -405,17 +405,11 @@ def main_dashboard(gc):
         individual_dashboard(gc)
 
 def show_centered_dataframe(df, height=400):
-    # Try to use center alignment if available (for Streamlit >=1.31.0)
-    try:
-        st.dataframe(
-            df,
-            column_config={col: st.column_config.Column(text_align="center") for col in df.columns},
-            height=height
-        )
-    except Exception:
-        # Fallback: static table with center alignment using pandas Styler
-        st.table(df.style.set_properties(**{'text-align': 'center'}))
-        st.info("Upgrade Streamlit to >=1.31 for interactive center-aligned tables.")
+    # Always use a static, fully center-aligned table for best visual results
+    centered = df.style.set_properties(**{'text-align': 'center'}).set_table_styles(
+        [{'selector': 'th', 'props': [('text-align', 'center')]}]
+    )
+    st.table(centered)
 
 def comparative_dashboard(gc):
     try:
