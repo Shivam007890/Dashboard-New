@@ -339,20 +339,37 @@ def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
 def plot_comparative_with_lines(df, key_prefix="comparative"):
     label_col = df.columns[0]
     candidate_cols = df.columns[1:]
-    df = df.reset_index(drop=True)
 
-    # Clean numeric values (remove percent if any)
+    # Identify % columns: either by name or by inspecting the first row value
+    percent_cols = []
+    for col in candidate_cols:
+        first_val = str(df[col].dropna().iloc[0]) if not df[col].dropna().empty else ''
+        if '%' in first_val or col.lower().endswith('%') or 'percent' in col.lower():
+            percent_cols.append(col)
+        else:
+            try:
+                val = float(first_val.replace('%','').strip())
+                if 0 <= val <= 100:
+                    percent_cols.append(col)
+            except:
+                continue
+
+    if not percent_cols:
+        st.warning("No percentage candidate columns found for trend line plot.")
+        return
+
+    df_percent = df[[label_col] + percent_cols].copy()
+
     def to_num(s):
         try:
             return float(str(s).replace('%','').strip())
         except Exception:
             return float('nan')
-    df_clean = df.copy()
-    for col in candidate_cols:
-        df_clean[col] = df_clean[col].apply(to_num)
+    for col in percent_cols:
+        df_percent[col] = df_percent[col].apply(to_num)
 
-    # Line plot (trend for each candidate)
-    long_df = df_clean.melt(id_vars=label_col, value_vars=candidate_cols, var_name='Candidate', value_name='Value')
+    # Line plot (trend for each candidate, only percentages)
+    long_df = df_percent.melt(id_vars=label_col, value_vars=percent_cols, var_name='Candidate', value_name='Value')
     fig_line = px.line(
         long_df,
         x=label_col,
@@ -364,24 +381,26 @@ def plot_comparative_with_lines(df, key_prefix="comparative"):
     )
     fig_line.update_layout(
         plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa",
-        xaxis_title=label_col, yaxis_title="Value (%)"
+        xaxis_title=label_col, yaxis_title="Value (%)",
+        yaxis_range=[0, 100]
     )
-
-    # Bar plot (all data, as before)
-    fig_bar = px.bar(
-        long_df, y=label_col, x='Value', color='Candidate',
-        orientation='h', barmode='group', text='Value',
-        color_discrete_sequence=px.colors.qualitative.Plotly,
-        title=f"Distribution by {label_col}",
-    )
-    fig_bar.update_layout(
-        plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa",
-        bargap=0.2, legend_title="Candidate"
-    )
-    fig_bar.update_traces(texttemplate='%{text:.1f}', textposition='outside')
 
     st.plotly_chart(fig_line, use_container_width=True, key=f"{key_prefix}_line")
-    st.plotly_chart(fig_bar, use_container_width=True, key=f"{key_prefix}_bar")
+
+    # Optionally, show all data as a bar plot or table
+    # Uncomment below if you want percent-only bar as well
+    # fig_bar = px.bar(
+    #     long_df, y=label_col, x='Value', color='Candidate',
+    #     orientation='h', barmode='group', text='Value',
+    #     color_discrete_sequence=px.colors.qualitative.Plotly,
+    #     title=f"Distribution by {label_col}",
+    # )
+    # fig_bar.update_layout(
+    #     plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa",
+    #     bargap=0.2, legend_title="Candidate"
+    # )
+    # fig_bar.update_traces(texttemplate='%{text:.1f}', textposition='outside')
+    # st.plotly_chart(fig_bar, use_container_width=True, key=f"{key_prefix}_bar")
 
 def is_question_sheet(ws):
     name = ws.title.strip().lower()
