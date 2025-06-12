@@ -404,6 +404,14 @@ def main_dashboard(gc):
     elif choice == "Individual Survey Reports":
         individual_dashboard(gc)
 
+def show_centered_dataframe(df, height=400):
+    # Center align all columns using the column_config parameter (Streamlit >= 1.19)
+    st.dataframe(
+        df,
+        column_config={col: st.column_config.Column(text_align="center") for col in df.columns},
+        height=height
+    )
+
 def comparative_dashboard(gc):
     try:
         all_sheets = [ws.title for ws in gc.open(SHEET_NAME).worksheets()]
@@ -430,8 +438,7 @@ def comparative_dashboard(gc):
         df = extract_block_df(data, block)
         st.markdown('<div class="center-table">', unsafe_allow_html=True)
         st.markdown("<h4 style='text-align: center;'>Comparative Results</h4>", unsafe_allow_html=True)
-        styled_df = df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
-        st.dataframe(styled_df, height=min(400, 50 + 40 * len(df)))
+        show_centered_dataframe(df, height=min(400, 50 + 40 * len(df)))
         st.markdown('</div>', unsafe_allow_html=True)
         plot_horizontal_bar_plotly(df, key=f"comparative_{selected_sheet}")
         csv = df.to_csv(index=False).encode('utf-8')
@@ -480,8 +487,7 @@ def individual_dashboard(gc):
                         st.warning(f"No data available for: {selected_cut}")
                     else:
                         st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_cut}</h4>', unsafe_allow_html=True)
-                        styled_df = df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
-                        st.dataframe(styled_df, height=min(400, 50 + 40 * len(df)))
+                        show_centered_dataframe(df, height=min(400, 50 + 40 * len(df)))
                         st.markdown('</div>', unsafe_allow_html=True)
                         plot_horizontal_bar_plotly(df=df, key=f"{prefix}_{selected_cut}_mainplot")
                         csv = df.to_csv(index=False).encode('utf-8')
@@ -526,8 +532,7 @@ def individual_dashboard(gc):
                         st.warning(f"No data available for: {selected_label}")
                     else:
                         st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_label}</h4>', unsafe_allow_html=True)
-                        styled_df = df.style.set_properties(**{'text-align': 'center', 'white-space': 'pre-line'})
-                        st.dataframe(styled_df, height=min(400, 50 + 40 * len(df)))
+                        show_centered_dataframe(df, height=min(400, 50 + 40 * len(df)))
                         st.markdown('</div>', unsafe_allow_html=True)
                         plot_horizontal_bar_plotly(df=df, key=f"{prefix}_{selected_name}_{selected_label}_filteredplot")
                         csv = df.to_csv(index=False).encode('utf-8')
