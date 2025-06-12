@@ -62,15 +62,14 @@ def password_setup_form():
     return False
 
 def inject_custom_css():
-    # Teal + Purple color scheme
     st.markdown("""
     <style>
     .stApp {
-        background: linear-gradient(120deg, #e0f7fa 0%, #f3e5f5 100%) !important;
+        background: linear-gradient(135deg, #22356f 0%, #fdbb2d 100%) !important;
         min-height: 100vh;
     }
     section[data-testid="stSidebar"] {
-        background: linear-gradient(135deg, #008080 0%, #7c4dff 100%) !important;
+        background: linear-gradient(135deg, #22356f 0%, #fdbb2d 100%) !important;
     }
     .dashboard-title {
         font-size: 2.7rem;
@@ -78,7 +77,7 @@ def inject_custom_css():
         margin-top: 1.1em;
         margin-bottom: 0.1em;
         text-align: center;
-        background: linear-gradient(90deg, #008080 10%, #7c4dff 60%, #b388ff 100%);
+        background: linear-gradient(90deg, #22356f 10%, #fdbb2d 90%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
@@ -95,7 +94,7 @@ def inject_custom_css():
     .section-header {
         font-size: 1.4rem;
         font-weight: 700;
-        background: linear-gradient(90deg, #008080 0%, #7c4dff 100%);
+        background: linear-gradient(90deg, #22356f 0%, #fdbb2d 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
@@ -112,20 +111,20 @@ def inject_custom_css():
         margin-bottom: 1em;
     }
     .stButton>button {
-        background: #008080;
-        color: #fff;
+        background: #22356f;
+        color: #fdbb2d;
         border-radius: 8px;
         border: none;
         font-weight: 600;
         margin: 6px 0;
         font-size: 1rem;
         transition: background 0.25s, box-shadow 0.25s;
-        box-shadow: 0 2px 8px #b388ff88;
+        box-shadow: 0 2px 8px #fdbb2d88;
     }
     .stButton>button:hover {
-        background: linear-gradient(90deg, #26c6da 0%, #7c4dff 100%);
-        color: #fff;
-        box-shadow: 0 2px 16px #7c4dff66;
+        background: linear-gradient(90deg, #fdbb2d 0%, #22356f 100%);
+        color: #22356f;
+        box-shadow: 0 2px 16px #fdbb2d66;
     }
     .stDataFrame {background: rgba(255,255,255,0.98);}
     </style>
@@ -296,10 +295,9 @@ def dataframe_to_pdf(df, title):
 def plot_horizontal_bar_plotly(df, key=None):
     label_col = df.columns[0]
     df = df[~df[label_col].astype(str).str.lower().str.contains('difference')]
-    # Teal/Purple palette
     color_palette = [
-        "#80cbc4", "#7e57c2", "#26a69a", "#9575cd", "#4dd0e1", "#ab47bc",
-        "#008080", "#512da8", "#b2dfdb"
+        "#1976d2", "#fdbb2d", "#22356f", "#7b1fa2", "#0288d1", "#c2185b",
+        "#ffb300", "#388e3c", "#8d6e63"
     ]
     exclude_keywords = ['sample', 'total', 'grand']
     value_cols = [col for col in df.columns[1:] if not any(k in col.strip().lower() for k in exclude_keywords)]
@@ -324,7 +322,7 @@ def plot_horizontal_bar_plotly(df, key=None):
             title=f"Distribution by {label_col}",
             xaxis_title=value_col, yaxis_title=label_col,
             showlegend=False, bargap=0.2,
-            plot_bgcolor="#f3e5f5", paper_bgcolor="#e0f7fa"
+            plot_bgcolor="#fdbb2d", paper_bgcolor="#22356f"
         )
         fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     else:
@@ -338,7 +336,7 @@ def plot_horizontal_bar_plotly(df, key=None):
             title=f"Distribution by {label_col}",
             xaxis_title='Value', yaxis_title=label_col,
             bargap=0.2, legend_title="Category",
-            plot_bgcolor="#f3e5f5", paper_bgcolor="#e0f7fa"
+            plot_bgcolor="#fdbb2d", paper_bgcolor="#22356f"
         )
         fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     st.plotly_chart(fig, use_container_width=True, key=key)
@@ -371,16 +369,14 @@ def extract_month_number(tab_name):
 def render_html_centered_table(df):
     html = '<style>th, td { text-align:center !important; }</style>'
     html += '<table style="margin-left:auto;margin-right:auto;border-collapse:collapse;width:100%;">'
-    # Column headers
     html += '<thead><tr>'
-    html += f'<th style="border:1px solid #ddd;background:#e0f7fa;"></th>'
+    html += f'<th style="border:1px solid #ddd;background:#fdbb2d;"></th>'
     for col in df.columns:
-        html += f'<th style="border:1px solid #ddd;background:#e0f7fa;">{col}</th>'
+        html += f'<th style="border:1px solid #ddd;background:#fdbb2d;">{col}</th>'
     html += '</tr></thead><tbody>'
-    # Data rows
     for idx, row in df.iterrows():
         html += '<tr>'
-        html += f'<td style="border:1px solid #ddd;background:#e0f7fa;">{idx}</td>'
+        html += f'<td style="border:1px solid #ddd;background:#fdbb2d;">{idx}</td>'
         for cell in row:
             html += f'<td style="border:1px solid #ddd;">{cell if pd.notna(cell) else ""}</td>'
         html += '</tr>'
@@ -390,23 +386,10 @@ def render_html_centered_table(df):
 def show_centered_dataframe(df, height=400):
     render_html_centered_table(df)
 
-def get_entity_and_cut_options(blocks, prefix):
-    # Robustly parse: entity = after prefix and before first '+', cut = after '+', or "Summary"
-    entity_to_cuts = {}
-    for b in blocks:
-        if b["label"].startswith(prefix + " "):
-            label = b["label"][len(prefix):].strip()   # Strip prefix
-            if '+' in label:
-                entity, cut = [part.strip() for part in label.split('+', 1)]
-            else:
-                entity, cut = label.strip(), "Summary"
-            entity_to_cuts.setdefault(entity, []).append((cut, b["label"]))
-    return entity_to_cuts
-
 def main_dashboard(gc):
     inject_custom_css()
     st.markdown("<h1 class='dashboard-title'>Kerala Survey Dashboard</h1>", unsafe_allow_html=True)
-    st.markdown("<h2 style='text-align: center; color: #512da8;'>Weekly and Comparative Survey Analysis</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center; color: #22356f;'>Weekly and Comparative Survey Analysis</h2>", unsafe_allow_html=True)
     map_path = "kerala_political_map.png"
     if os.path.exists(map_path):
         st.markdown(
@@ -454,7 +437,7 @@ def comparative_dashboard(gc):
         block = blocks[0]
         df = extract_block_df(data, block)
         st.markdown('<div class="center-table">', unsafe_allow_html=True)
-        st.markdown("<h4 style='text-align: center; color: #008080;'>Comparative Results</h4>", unsafe_allow_html=True)
+        st.markdown("<h4 style='text-align: center; color: #22356f;'>Comparative Results</h4>", unsafe_allow_html=True)
         show_centered_dataframe(df, height=min(400, 50 + 40 * len(df)))
         st.markdown('</div>', unsafe_allow_html=True)
         plot_horizontal_bar_plotly(df, key=f"comparative_{selected_sheet}")
@@ -465,15 +448,26 @@ def comparative_dashboard(gc):
     except Exception as e:
         st.error(f"Could not load comparative analysis: {e}")
 
+def dashboard_geo_section(blocks, block_label, pivot_data, geo_name):
+    block = next((b for b in blocks if b["label"].lower() == block_label.lower()), None)
+    if not block:
+        st.info(f"No block found with label {block_label}.")
+        return
+    df = extract_block_df(pivot_data, block)
+    if df.empty:
+        st.warning(f"No data table found for {block_label}.")
+        return
+    geo_col = df.columns[0]
+    geo_values = df[geo_col].dropna().unique().tolist()
+    selection = st.multiselect(f"Select {geo_name}(s) to display", geo_values, default=geo_values)
+    filtered_df = df[df[geo_col].isin(selection)]
+    st.markdown(f'<div class="center-table"><h4 style="text-align:center">{block_label} Summary</h4>', unsafe_allow_html=True)
+    show_centered_dataframe(filtered_df)
+    st.markdown('</div>', unsafe_allow_html=True)
+    plot_horizontal_bar_plotly(filtered_df, key=f"{block_label}_geo_summary_plot")
+
 def individual_dashboard(gc):
     st.markdown('<div class="section-header">Individual Survey Reports</div>', unsafe_allow_html=True)
-    all_levels = [
-        ("State", "A. Individual State Wide Survey Reports"),
-        ("Region", "B. Region Wise Survey Reports"),
-        ("Zone", "C. Zone Wise Survey Reports"),
-        ("District", "D. District Wise Survey Reports"),
-        ("AC", "E. AC Wise Survey Reports"),
-    ]
     try:
         all_ws = gc.open(SHEET_NAME).worksheets()
         question_sheets = [ws.title for ws in all_ws if is_question_sheet(ws)]
@@ -485,88 +479,43 @@ def individual_dashboard(gc):
         blocks = find_cuts_and_blocks(data)
         all_labels = [b["label"] for b in blocks]
 
-        for prefix, display_name in all_levels:
-            block_labels = [l for l in all_labels if l.startswith(prefix+" ")]
-            if not block_labels:
-                st.info(f"No cuts found for {display_name}.")
-                continue
-            with st.expander(f"{display_name} ({prefix})", expanded=True if prefix == "State" else False):
-                if prefix == "State":
-                    selected_cut = st.selectbox(
-                        f"Select Cut for {display_name}",
-                        block_labels,
-                        key=f"{prefix}_cut_select"
-                    ) if block_labels else None
-                    if selected_cut:
-                        block = next((b for b in blocks if b["label"] == selected_cut), None)
-                        df = extract_block_df(data, block) if block else pd.DataFrame()
-                        if df.empty:
-                            st.warning(f"No data available for: {selected_cut}")
-                        else:
-                            st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_cut}</h4>', unsafe_allow_html=True)
-                            show_centered_dataframe(df, height=min(400, 50 + 40 * len(df)))
-                            st.markdown('</div>', unsafe_allow_html=True)
-                            plot_horizontal_bar_plotly(df=df, key=f"{prefix}_{selected_cut}_mainplot")
-                            csv = df.to_csv(index=False).encode('utf-8')
-                            st.download_button(f"Download CSV ({selected_cut})", csv, f"{selected_sheet}_{selected_cut}.csv", "text/csv", key=f"csv_{prefix}_{selected_cut}_main")
-                            pdf_file = dataframe_to_pdf(df, f"{selected_sheet} - {selected_cut}")
-                            st.download_button(f"Download PDF ({selected_cut})", pdf_file, f"{selected_sheet}_{selected_cut}.pdf", "application/pdf", key=f"pdf_{prefix}_{selected_cut}_main")
-                            st.markdown("---")
-                else:
-                    entity_to_cuts = get_entity_and_cut_options(blocks, prefix)
-                    entity_names = sorted(entity_to_cuts.keys())
-                    if not entity_names:
-                        st.info(f"No {prefix} names found in this sheet.")
-                        continue
-                    if prefix in ["District", "Zone", "AC"]:
-                        select_all = st.radio(f"Show all {prefix}s or select individually?", ["Select One", "Select All"], key=f"{prefix}_all_radio")
-                        if select_all == "Select All":
-                            for entity_name in entity_names:
-                                cuts_for_entity = entity_to_cuts[entity_name]
-                                st.markdown(f"<h5 style='text-align:center;color:#008080'>{entity_name}</h5>", unsafe_allow_html=True)
-                                for cut, label in cuts_for_entity:
-                                    block = next((b for b in blocks if b["label"] == label), None)
-                                    df = extract_block_df(data, block) if block else pd.DataFrame()
-                                    if df.empty:
-                                        st.warning(f"No data available for: {label}")
-                                    else:
-                                        st.markdown(f'<div class="center-table"><h6 style="text-align:center; color:#7c4dff">{cut}</h6>', unsafe_allow_html=True)
-                                        show_centered_dataframe(df, height=min(400, 50 + 40 * len(df)))
-                                        st.markdown('</div>', unsafe_allow_html=True)
-                                        plot_horizontal_bar_plotly(df=df, key=f"{prefix}_{entity_name}_{cut}_allplot")
-                                        st.markdown("---")
-                        else:
-                            selected_entity = st.selectbox(f"Select {prefix}", entity_names, key=f"{prefix}_filtered_select")
-                            cuts_for_entity = entity_to_cuts[selected_entity]
-                            cut_names = [c[0] for c in cuts_for_entity]
-                            selected_cut = st.selectbox(f"Select Cut for {selected_entity}", cut_names, key=f"{prefix}_filtered_cut_select")
-                            label = dict(cuts_for_entity)[selected_cut]
-                            block = next((b for b in blocks if b["label"] == label), None)
-                            df = extract_block_df(data, block) if block else pd.DataFrame()
-                            if df.empty:
-                                st.warning(f"No data available for: {label}")
-                            else:
-                                st.markdown(f'<div class="center-table"><h4 style="text-align:center;color:#008080">{selected_entity} - {selected_cut}</h4>', unsafe_allow_html=True)
-                                show_centered_dataframe(df, height=min(400, 50 + 40 * len(df)))
-                                st.markdown('</div>', unsafe_allow_html=True)
-                                plot_horizontal_bar_plotly(df=df, key=f"{prefix}_{selected_entity}_{selected_cut}_singleplot")
-                                st.markdown("---")
-                    else:  # For Region
-                        selected_entity = st.selectbox(f"Select {prefix}", entity_names, key=f"{prefix}_filtered_select")
-                        cuts_for_entity = entity_to_cuts[selected_entity]
-                        cut_names = [c[0] for c in cuts_for_entity]
-                        selected_cut = st.selectbox(f"Select Cut for {selected_entity}", cut_names, key=f"{prefix}_filtered_cut_select")
-                        label = dict(cuts_for_entity)[selected_cut]
-                        block = next((b for b in blocks if b["label"] == label), None)
-                        df = extract_block_df(data, block) if block else pd.DataFrame()
-                        if df.empty:
-                            st.warning(f"No data available for: {label}")
-                        else:
-                            st.markdown(f'<div class="center-table"><h4 style="text-align:center;color:#7c4dff">{selected_entity} - {selected_cut}</h4>', unsafe_allow_html=True)
-                            show_centered_dataframe(df, height=min(400, 50 + 40 * len(df)))
-                            st.markdown('</div>', unsafe_allow_html=True)
-                            plot_horizontal_bar_plotly(df=df, key=f"{prefix}_{selected_entity}_{selected_cut}_regionplot")
-                            st.markdown("---")
+        # State summary and state cuts
+        with st.expander("A. Individual State Wide Survey Reports (State)", expanded=True):
+            # Find all blocks with "State" or "State + ..." as label
+            state_blocks = [b for b in blocks if b["label"].lower().startswith("state")]
+            for block in state_blocks:
+                df = extract_block_df(data, block)
+                if df.empty: continue
+                st.markdown(f'<div class="center-table"><h4 style="text-align:center">{block["label"]}</h4>', unsafe_allow_html=True)
+                show_centered_dataframe(df)
+                st.markdown('</div>', unsafe_allow_html=True)
+                plot_horizontal_bar_plotly(df, key=f"state_{block['label']}_plot")
+                st.markdown("---")
+
+        # Geo sections: District, Zone, Region, AC
+        geo_sections = [
+            ("District", "District"),
+            ("Zone", "Zone"),
+            ("Region", "Region"),
+            ("AC", "Assembly Constituency"),
+        ]
+        for block_label, geo_name in geo_sections:
+            with st.expander(f"{geo_name} Wise Survey Reports ({block_label})", expanded=False):
+                dashboard_geo_section(blocks, block_label, data, geo_name)
+
+        # Other cuts (Religion, Gender, Age, Community) if present but not as state cuts
+        cut_labels = ["Religion", "Gender", "Age", "Community"]
+        other_cuts = [b for b in blocks if any(cl.lower() == b["label"].lower() for cl in cut_labels)]
+        if other_cuts:
+            with st.expander("Other Cuts Summary", expanded=False):
+                for block in other_cuts:
+                    df = extract_block_df(data, block)
+                    if df.empty: continue
+                    st.markdown(f'<div class="center-table"><h4 style="text-align:center">{block["label"]}</h4>', unsafe_allow_html=True)
+                    show_centered_dataframe(df)
+                    st.markdown('</div>', unsafe_allow_html=True)
+                    plot_horizontal_bar_plotly(df, key=f"cut_{block['label']}_plot")
+                    st.markdown("---")
     except Exception as e:
         st.error(f"Could not load individual survey report: {e}")
 
