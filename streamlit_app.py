@@ -377,10 +377,33 @@ def extract_month_number(tab_name):
             return i+1
     return -1 # not found
 
+def render_html_centered_table(df):
+    # Build HTML table with all cells, headers, and index truly centered
+    html = '<style>th, td { text-align:center !important; }</style>'
+    html += '<table style="margin-left:auto;margin-right:auto;border-collapse:collapse;width:100%;">'
+    # Column headers
+    html += '<thead><tr>'
+    html += f'<th style="border:1px solid #ddd;background:#f9f9f9;"></th>'
+    for col in df.columns:
+        html += f'<th style="border:1px solid #ddd;background:#f9f9f9;">{col}</th>'
+    html += '</tr></thead><tbody>'
+    # Data rows
+    for idx, row in df.iterrows():
+        html += '<tr>'
+        html += f'<td style="border:1px solid #ddd;background:#f9f9f9;">{idx}</td>'
+        for cell in row:
+            html += f'<td style="border:1px solid #ddd;">{cell if pd.notna(cell) else ""}</td>'
+        html += '</tr>'
+    html += '</tbody></table>'
+    st.markdown(html, unsafe_allow_html=True)
+
+def show_centered_dataframe(df, height=400):
+    render_html_centered_table(df)
+
 def main_dashboard(gc):
     inject_custom_css()
     st.markdown("<h1 style='text-align: center; color: grey;'>Kerala Survey Dashboard</h1>", unsafe_allow_html=True)
-    st.markdown("<h2 style='text-align: center; color: black;'>Survey Analysis</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center; color: black;'>Weekly and Comparative Survey Analysis</h2>", unsafe_allow_html=True)
     map_path = "kerala_political_map.png"
     if os.path.exists(map_path):
         st.markdown(
@@ -403,13 +426,6 @@ def main_dashboard(gc):
         comparative_dashboard(gc)
     elif choice == "Individual Survey Reports":
         individual_dashboard(gc)
-
-def show_centered_dataframe(df, height=400):
-    # Always use a static, fully center-aligned table for best visual results
-    centered = df.style.set_properties(**{'text-align': 'center'}).set_table_styles(
-        [{'selector': 'th', 'props': [('text-align', 'center')]}]
-    )
-    st.table(centered)
 
 def comparative_dashboard(gc):
     try:
