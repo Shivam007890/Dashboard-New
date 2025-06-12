@@ -192,6 +192,22 @@ def find_cuts_and_blocks(data):
                     "data_start": i+2,
                     "data_end": j
                 })
+    # Fallback: if no blocks found, treat first non-empty header row as block
+    if not blocks:
+        for i, row in enumerate(data):
+            if sum(bool(str(cell).strip()) for cell in row) >= 2:
+                # Assume header at i, data from i+1 until empty row
+                j = i+1
+                while j < len(data) and any(str(cell).strip() for cell in data[j]):
+                    j += 1
+                blocks.append({
+                    "label": "Comparative Results",
+                    "start": i-1 if i > 0 else 0,
+                    "header": i,
+                    "data_start": i+1,
+                    "data_end": j
+                })
+                break
     return blocks
 
 def extract_block_df(data, block):
