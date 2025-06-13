@@ -523,11 +523,11 @@ def main_dashboard(gc):
     choice = st.radio(
         "",
         [
-            "Comparative Analysis Over Different Surveys",
+            "Periodic Popularity Poll Ticker",
             "Individual Survey Reports"
         ]
     )
-    if choice == "Comparative Analysis Over Different Surveys":
+    if choice == "Periodic Popularity Poll Ticker":
         comparative_dashboard(gc)
     elif choice == "Individual Survey Reports":
         individual_dashboard(gc)
