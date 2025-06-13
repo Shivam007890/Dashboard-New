@@ -79,10 +79,6 @@ def inject_custom_css():
         margin-top: 1em;
         margin-bottom: 1em;
     }
-    .print-btn-container {
-        text-align: right;
-        margin-bottom: 0.5em;
-    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -178,47 +174,44 @@ def extract_block_df(data, block):
         st.warning(f"Could not parse block as table: {err}")
         return pd.DataFrame()
 
-def show_print_button():
-    print_button = """
-    <div class="print-btn-container">
-    <button onclick="window.print()" style="padding:7px 20px;font-size:1rem;border-radius:3px;background:#1976d2;color:white;border:none;cursor:pointer;">
-    🖨️ Print Table / Save as PDF</button>
-    </div>
-    <style>
-    @media print {
-        body * { visibility: hidden !important; }
-        #printable-area, #printable-area * {
-            visibility: visible !important;
-        }
-        #printable-area {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100vw;
-        }
-    }
-    </style>
-    """
-    components.html(print_button, height=70)
-
-def show_centered_dataframe(df, height=400):
-    show_print_button()
-    html = '<div id="printable-area">'
-    html += '<style>th, td { text-align:center !important; }</style>'
-    html += '<table style="margin-left:auto;margin-right:auto;border-collapse:collapse;width:100%;">'
-    html += '<thead><tr>'
-    html += f'<th style="border:1px solid #ddd;background:#f5f7fa;"></th>'
+def show_printable_table(df):
+    html_table = '<table style="margin-left:auto;margin-right:auto;border-collapse:collapse;width:100%;">'
+    html_table += '<thead><tr>'
+    html_table += f'<th style="border:1px solid #ddd;background:#f5f7fa;"></th>'
     for col in df.columns:
-        html += f'<th style="border:1px solid #ddd;background:#f5f7fa;">{col}</th>'
-    html += '</tr></thead><tbody>'
+        html_table += f'<th style="border:1px solid #ddd;background:#f5f7fa;">{col}</th>'
+    html_table += '</tr></thead><tbody>'
     for idx, row in df.iterrows():
-        html += '<tr>'
-        html += f'<td style="border:1px solid #ddd;background:#f5f7fa;">{idx}</td>'
+        html_table += '<tr>'
+        html_table += f'<td style="border:1px solid #ddd;background:#f5f7fa;">{idx}</td>'
         for cell in row:
-            html += f'<td style="border:1px solid #ddd;">{cell if pd.notna(cell) else ""}</td>'
-        html += '</tr>'
-    html += '</tbody></table></div>'
-    st.markdown(html, unsafe_allow_html=True)
+            html_table += f'<td style="border:1px solid #ddd;">{cell if pd.notna(cell) else ""}</td>'
+        html_table += '</tr>'
+    html_table += '</tbody></table>'
+
+    html = f"""
+    <style>
+    @media print {{
+        body * {{ visibility: hidden !important; }}
+        #printable-area, #printable-area * {{
+            visibility: visible !important;
+        }}
+        #printable-area {{
+            position: absolute; left: 0; top: 0; width: 100vw;
+        }}
+        .print-btn {{ display: none; }}
+    }}
+    </style>
+    <div id="printable-area">
+        <button class="print-btn" onclick="window.print()" 
+         style="padding:7px 20px;font-size:1rem;
+         border-radius:3px;background:#1976d2;color:white;
+         border:none;cursor:pointer;margin-bottom:10px;">
+        🖨️ Print Table / Save as PDF</button>
+        {html_table}
+    </div>
+    """
+    components.html(html, height=600, scrolling=True)
 
 def dashboard_geo_section(blocks, block_prefix, pivot_data, geo_name):
     geo_blocks = [b for b in blocks if b["label"].lower().startswith(block_prefix.lower())]
@@ -247,7 +240,7 @@ def dashboard_geo_section(blocks, block_prefix, pivot_data, geo_name):
         return
     filtered_df = df[df[geo_col].isin(selection)]
     st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_block_label}</h4>', unsafe_allow_html=True)
-    show_centered_dataframe(filtered_df)
+    show_printable_table(filtered_df)
     st.markdown('</div>', unsafe_allow_html=True)
     plot_horizontal_bar_plotly(filtered_df, key=f"{block_prefix}_{selected_block_label}_geo_summary_plot", colorway="plotly")
 
@@ -437,7 +430,7 @@ def comparative_dashboard(gc):
         df = extract_block_df(data, block)
         st.markdown('<div class="center-table">', unsafe_allow_html=True)
         st.markdown("<h4 style='text-align: center; color: #22356f;'>Comparative Results</h4>", unsafe_allow_html=True)
-        show_centered_dataframe(df, height=min(400, 50 + 40 * len(df)))
+        show_printable_table(df)
         st.markdown('</div>', unsafe_allow_html=True)
         plot_trend_ticker(df, key_prefix=f"comparative_{selected_sheet}")
         csv = df.to_csv(index=False).encode('utf-8')
@@ -474,7 +467,7 @@ def individual_dashboard(gc):
             df = extract_block_df(data, state_block)
             if not df.empty:
                 st.markdown(f'<div class="center-table"><h4 style="text-align:center">{state_block["label"]}</h4>', unsafe_allow_html=True)
-                show_centered_dataframe(df)
+                show_printable_table(df)
                 st.markdown('</div>', unsafe_allow_html=True)
                 plot_horizontal_bar_plotly(df, key=f"state_{state_block['label']}_plot", colorway="plotly")
                 csv = df.to_csv(index=False).encode('utf-8')
@@ -497,7 +490,7 @@ def individual_dashboard(gc):
                     df = extract_block_df(data, block)
                     if df.empty: continue
                     st.markdown(f'<div class="center-table"><h4 style="text-align:center">{block["label"]}</h4>', unsafe_allow_html=True)
-                    show_centered_dataframe(df)
+                    show_printable_table(df)
                     st.markdown('</div>', unsafe_allow_html=True)
                     plot_horizontal_bar_plotly(df, key=f"cut_{block['label']}_plot", colorway="plotly")
     except Exception as e:
