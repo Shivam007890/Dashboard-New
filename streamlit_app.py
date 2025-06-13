@@ -155,6 +155,15 @@ def load_pivot_data(_gc, sheet_name, worksheet_name):
     data = ws.get_all_values()
     return data
 
+def get_month_list(question_sheets):
+    months = []
+    for name in question_sheets:
+        if "-" in name:
+            month = name.split("-")[0].strip()
+            if month and month not in months:
+                months.append(month)
+    return months
+
 def find_cuts_and_blocks(data):
     blocks = []
     for i, row in enumerate(data):
@@ -286,7 +295,6 @@ def safe_float(val):
 def plot_trend_ticker(df, key_prefix="comparative"):
     label_col = df.columns[0]
     candidate_cols = df.columns[1:]
-
     exclude_keywords = ['grand total', 'total', 'sample', 'difference']
     filtered_cols = []
     for col in candidate_cols:
@@ -295,15 +303,12 @@ def plot_trend_ticker(df, key_prefix="comparative"):
         if (not any(x in col_lower for x in exclude_keywords)
             and (('%' in first_val) or (0 <= safe_float(first_val) <= 100))):
             filtered_cols.append(col)
-
     if not filtered_cols:
         st.warning("No candidate columns found for trend plot.")
         return
-
     df_percent = df[[label_col] + filtered_cols].copy()
     mask_valid_tab = ~df_percent[label_col].astype(str).str.lower().str.contains('difference')
     df_percent = df_percent[mask_valid_tab]
-
     def to_num(s):
         try:
             return float(str(s).replace('%','').strip())
@@ -311,8 +316,6 @@ def plot_trend_ticker(df, key_prefix="comparative"):
             return float('nan')
     for col in filtered_cols:
         df_percent[col] = df_percent[col].apply(to_num)
-
-    # Compute y-axis range dynamically
     vals = df_percent[filtered_cols].values.flatten()
     vals = [v for v in vals if pd.notnull(v)]
     if vals:
@@ -324,21 +327,12 @@ def plot_trend_ticker(df, key_prefix="comparative"):
         if min_y < 0: min_y = 0
     else:
         min_y, max_y = 0, 100
-
-    # Custom line colors for ticker
     custom_colors = [
-        "#ff4e50",  # Red
-        "#1e90ff",  # Blue
-        "#ffd166",  # Yellow
-        "#06d6a0",  # Turquoise
-        "#ef476f",  # Pinkish
-        "#118ab2",  # Strong Blue
-        "#f9844a",  # Orange
-        "#43aa8b",  # Green
+        "#ff4e50", "#1e90ff", "#ffd166", "#06d6a0", "#ef476f",
+        "#118ab2", "#f9844a", "#43aa8b",
     ]
     marker_colors = custom_colors * ((len(filtered_cols) // len(custom_colors)) + 1)
     line_width = 4
-
     fig = go.Figure()
     for idx, col in enumerate(filtered_cols):
         fig.add_trace(
@@ -358,7 +352,6 @@ def plot_trend_ticker(df, key_prefix="comparative"):
                 )
             )
         )
-
     fig.update_layout(
         title="Candidate Trend Across Tabs/Sheets",
         xaxis_title=label_col,
@@ -370,7 +363,6 @@ def plot_trend_ticker(df, key_prefix="comparative"):
         font=dict(color="black"),
         legend=dict(bgcolor="rgba(0,0,0,0)")
     )
-
     st.plotly_chart(fig, use_container_width=True, key=f"{key_prefix}_ticker")
 
 def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
@@ -378,7 +370,6 @@ def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
     df = df[~df[label_col].astype(str).str.lower().str.contains('difference')]
     exclude_keywords = ['sample', 'total', 'grand']
     value_cols = [col for col in df.columns[1:] if not any(k in col.strip().lower() for k in exclude_keywords)]
-
     if colorway == "plotly":
         colors = px.colors.qualitative.Plotly
     else:
@@ -452,7 +443,8 @@ def extract_month_number(tab_name):
     return -1 # not found
 
 def render_html_centered_table(df):
-    html = '<style>th, td { text-align:center !important; }</style>'
+    html = '<div style="overflow-x:auto">'
+    html += '<style>th, td { text-align:center !important; }</style>'
     html += '<table style="margin-left:auto;margin-right:auto;border-collapse:collapse;width:100%;">'
     html += '<thead><tr>'
     html += f'<th style="border:1px solid #ddd;background:#f5f7fa;"></th>'
@@ -465,7 +457,7 @@ def render_html_centered_table(df):
         for cell in row:
             html += f'<td style="border:1px solid #ddd;">{cell if pd.notna(cell) else ""}</td>'
         html += '</tr>'
-    html += '</tbody></table>'
+    html += '</tbody></table></div>'
     st.markdown(html, unsafe_allow_html=True)
 
 def show_centered_dataframe(df, height=400):
@@ -485,8 +477,6 @@ def dashboard_geo_section(blocks, block_prefix, pivot_data, geo_name):
         return
     geo_col = df.columns[0]
     geo_values = df[geo_col].dropna().unique().tolist()
-
-    # "Select All" checkbox for multi-select
     select_all = st.checkbox(f"Select all {geo_name}s", value=True, key=f"{block_prefix}_select_all")
     if select_all:
         selection = geo_values
@@ -498,7 +488,6 @@ def dashboard_geo_section(blocks, block_prefix, pivot_data, geo_name):
     if not selection:
         st.info(f"Please select at least one {geo_name}.")
         return
-
     filtered_df = df[df[geo_col].isin(selection)]
     st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_block_label}</h4>', unsafe_allow_html=True)
     show_centered_dataframe(filtered_df)
@@ -539,7 +528,6 @@ def comparative_dashboard(gc):
         if not comparative_sheets:
             st.warning("No comparative analysis sheets found.")
             return
-
         sorted_sheets = sorted(comparative_sheets, key=extract_month_number)
         def clean_comp_name(s):
             if s.lower().startswith("comp_"):
@@ -575,23 +563,36 @@ def individual_dashboard(gc):
         if not question_sheets:
             st.warning("No question sheets found.")
             return
-        selected_sheet = st.selectbox("Select Question Sheet", question_sheets)
+        # Month selection dropdown
+        months = get_month_list(question_sheets)
+        if months:
+            selected_month = st.selectbox("Select Month", months)
+            question_sheets_filtered = [qs for qs in question_sheets if qs.startswith(selected_month)]
+        else:
+            selected_month = None
+            question_sheets_filtered = question_sheets
+        if not question_sheets_filtered:
+            st.warning("No sheets found for selected month.")
+            return
+        selected_sheet = st.selectbox("Select Question Sheet", question_sheets_filtered)
         data = load_pivot_data(gc, SHEET_NAME, selected_sheet)
         blocks = find_cuts_and_blocks(data)
         all_labels = [b["label"] for b in blocks]
-
-        # State summary and state cuts
-        with st.expander("A. Individual State Wide Survey Reports (State)", expanded=True):
-            state_blocks = [b for b in blocks if b["label"].lower().startswith("state")]
-            for block in state_blocks:
-                df = extract_block_df(data, block)
-                if df.empty: continue
-                st.markdown(f'<div class="center-table"><h4 style="text-align:center">{block["label"]}</h4>', unsafe_allow_html=True)
+        # State Wide Survey Report dropdown
+        state_blocks = [b for b in blocks if b["label"].lower().startswith("state")]
+        if state_blocks:
+            state_labels = [b["label"] for b in state_blocks]
+            selected_state_label = st.selectbox("Select State Wide Survey Report", state_labels)
+            selected_state_block = next(b for b in state_blocks if b["label"] == selected_state_label)
+            df = extract_block_df(data, selected_state_block)
+            if not df.empty:
+                st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_state_label}</h4>', unsafe_allow_html=True)
                 show_centered_dataframe(df)
                 st.markdown('</div>', unsafe_allow_html=True)
-                plot_horizontal_bar_plotly(df, key=f"state_{block['label']}_plot", colorway="plotly")
+                plot_horizontal_bar_plotly(df, key=f"state_{selected_state_label}_plot", colorway="plotly")
                 st.markdown("---")
-
+        else:
+            st.info("No State Wide Survey Reports found in this sheet.")
         geo_sections = [
             ("District", "District"),
             ("Zone", "Zone"),
@@ -601,7 +602,6 @@ def individual_dashboard(gc):
         for block_prefix, geo_name in geo_sections:
             with st.expander(f"{geo_name} Wise Survey Reports ({block_prefix})", expanded=False):
                 dashboard_geo_section(blocks, block_prefix, data, geo_name)
-
         cut_labels = ["Religion", "Gender", "Age", "Community"]
         other_cuts = [b for b in blocks if any(cl.lower() == b["label"].lower() for cl in cut_labels)]
         if other_cuts:
