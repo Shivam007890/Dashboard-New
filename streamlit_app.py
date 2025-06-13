@@ -7,7 +7,6 @@ from fpdf import FPDF
 import os
 import json
 import tempfile
-import plotly.graph_objects as go
 import plotly.express as px
 import base64
 
@@ -65,7 +64,7 @@ def inject_custom_css():
     st.markdown("""
     <style>
     .stApp {
-        background: #1d3557 !important;
+        background: #f5f7fa !important;
         min-height: 100vh;
     }
     section[data-testid="stSidebar"] {
@@ -77,7 +76,7 @@ def inject_custom_css():
         margin-top: 1.1em;
         margin-bottom: 0.1em;
         text-align: center;
-        color: #f1faee;
+        color: #2d3748;
         font-family: 'Segoe UI', 'Roboto', Arial, sans-serif;
         letter-spacing: 0.02em;
     }
@@ -91,7 +90,7 @@ def inject_custom_css():
     .section-header {
         font-size: 1.4rem;
         font-weight: 700;
-        color: #a8dadc;
+        color: #22356f;
         margin-top: 1.1em;
         margin-bottom: 0.4em;
         text-align: center;
@@ -290,24 +289,30 @@ def safe_float(val):
     except Exception:
         return 0
 
-def plot_trend_ticker(df, key_prefix="comparative"):
+def plot_comparative_with_lines(df, key_prefix="comparative"):
     label_col = df.columns[0]
     candidate_cols = df.columns[1:]
 
-    exclude_keywords = ['grand total', 'total', 'sample', 'difference']
+    # Define words indicating columns to exclude from the trend chart
+    exclude_candidates = ['grand total', 'total', 'sample', 'difference']
+
+    # Filter out unwanted columns
     filtered_cols = []
     for col in candidate_cols:
         col_lower = col.lower()
         first_val = str(df[col].dropna().iloc[0]) if not df[col].dropna().empty else ''
-        if (not any(x in col_lower for x in exclude_keywords)
+        # Only keep if not in exclude list, not a count, and is a percent (by value or by name)
+        if (not any(x in col_lower for x in exclude_candidates)
             and (('%' in first_val) or (0 <= safe_float(first_val) <= 100))):
             filtered_cols.append(col)
 
     if not filtered_cols:
-        st.warning("No candidate columns found for trend plot.")
+        st.warning("No percentage candidate columns found for trend line plot.")
         return
 
     df_percent = df[[label_col] + filtered_cols].copy()
+
+    # Only use rows that are actual survey tabs (e.g. May, June), not rows with "difference"
     mask_valid_tab = ~df_percent[label_col].astype(str).str.lower().str.contains('difference')
     df_percent = df_percent[mask_valid_tab]
 
@@ -319,52 +324,24 @@ def plot_trend_ticker(df, key_prefix="comparative"):
     for col in filtered_cols:
         df_percent[col] = df_percent[col].apply(to_num)
 
-    # Custom color palette and line style
-    # Two main lines: red and light blue, rest get alternating or px default
-    custom_colors = [
-        "#ff4e50",  # Red
-        "#b6e0fe",  # Light blue
-        "#ffd166",  # Yellow
-        "#06d6a0",  # Turquoise
-        "#118ab2",  # Blue
-        "#ef476f",  # Pinkish
-    ]
-    marker_colors = custom_colors * ((len(filtered_cols) // len(custom_colors)) + 1)
-    line_width = 4
-
-    fig = go.Figure()
-    for idx, col in enumerate(filtered_cols):
-        fig.add_trace(
-            go.Scatter(
-                x=df_percent[label_col],
-                y=df_percent[col],
-                mode="lines+markers",
-                name=col,
-                line=dict(
-                    color=marker_colors[idx],
-                    width=line_width
-                ),
-                marker=dict(
-                    size=10,
-                    color=marker_colors[idx],
-                    line=dict(width=2, color="white")
-                )
-            )
-        )
-
-    fig.update_layout(
+    # Line plot
+    long_df = df_percent.melt(id_vars=label_col, value_vars=filtered_cols, var_name='Candidate', value_name='Value')
+    fig_line = px.line(
+        long_df,
+        x=label_col,
+        y="Value",
+        color="Candidate",
+        markers=True,
         title="Candidate Trend Across Tabs/Sheets",
-        xaxis_title=label_col,
-        yaxis_title="Value (%)",
-        yaxis=dict(range=[0, 100], gridcolor="#457b9d", color="white", tickfont=dict(color="white")),
-        xaxis=dict(showgrid=False, color="white", tickfont=dict(color="white")),
-        plot_bgcolor="#1d3557",
-        paper_bgcolor="#1d3557",
-        font=dict(color="white"),
-        legend=dict(bgcolor="rgba(0,0,0,0)")
+        color_discrete_sequence=px.colors.qualitative.Plotly
+    )
+    fig_line.update_layout(
+        plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa",
+        xaxis_title=label_col, yaxis_title="Value (%)",
+        yaxis_range=[0, 100]
     )
 
-    st.plotly_chart(fig, use_container_width=True, key=f"{key_prefix}_ticker")
+    st.plotly_chart(fig_line, use_container_width=True, key=f"{key_prefix}_line")
 
 def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
     label_col = df.columns[0]
@@ -503,7 +480,7 @@ def dashboard_geo_section(blocks, block_prefix, pivot_data, geo_name):
 def main_dashboard(gc):
     inject_custom_css()
     st.markdown("<h1 class='dashboard-title'>Kerala Survey Dashboard</h1>", unsafe_allow_html=True)
-    st.markdown("<h2 style='text-align: center; color: #a8dadc;'>Weekly and Comparative Survey Analysis</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center; color: #22356f;'>Weekly and Comparative Survey Analysis</h2>", unsafe_allow_html=True)
     map_path = "kerala_political_map.png"
     if os.path.exists(map_path):
         st.markdown(
@@ -551,10 +528,10 @@ def comparative_dashboard(gc):
         block = blocks[0]
         df = extract_block_df(data, block)
         st.markdown('<div class="center-table">', unsafe_allow_html=True)
-        st.markdown("<h4 style='text-align: center; color: #a8dadc;'>Comparative Results</h4>", unsafe_allow_html=True)
+        st.markdown("<h4 style='text-align: center; color: #22356f;'>Comparative Results</h4>", unsafe_allow_html=True)
         show_centered_dataframe(df, height=min(400, 50 + 40 * len(df)))
         st.markdown('</div>', unsafe_allow_html=True)
-        plot_trend_ticker(df, key_prefix=f"comparative_{selected_sheet}")
+        plot_comparative_with_lines(df, key_prefix=f"comparative_{selected_sheet}")
         csv = df.to_csv(index=False).encode('utf-8')
         st.download_button("Download CSV", csv, f"{selected_sheet}_comparative.csv", "text/csv")
         pdf_file = dataframe_to_pdf(df, f"Comparative Analysis - {selected_sheet}")
