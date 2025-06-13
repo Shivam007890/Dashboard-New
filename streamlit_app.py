@@ -10,8 +10,49 @@ import tempfile
 import plotly.graph_objects as go
 import plotly.express as px
 import base64
-from PIL import Image
-import matplotlib.pyplot as plt
+
+# --- Only import matplotlib and pillow when needed, with a helper ---
+def dataframe_to_image(df, title=None):
+    import matplotlib.pyplot as plt
+    from PIL import Image
+
+    ncols = len(df.columns)
+    nrows = len(df)
+    fig, ax = plt.subplots(figsize=(min(20, max(8, ncols*1.15)), 2.2 + 0.6*nrows))
+    ax.axis('off')
+    mpl_table = ax.table(cellText=df.values, colLabels=df.columns, loc='center', cellLoc='center')
+    mpl_table.auto_set_font_size(False)
+    mpl_table.set_fontsize(13)
+    mpl_table.scale(1.2, 1.1)
+    for key, cell in mpl_table.get_celld().items():
+        cell.set_linewidth(1.2)
+        cell.set_fontsize(13)
+        if key[0] == 0:
+            cell.set_fontweight('bold')
+    if title:
+        plt.title(title, fontsize=18, weight='bold', pad=18)
+    plt.tight_layout()
+    buf = BytesIO()
+    plt.savefig(buf, format="png", bbox_inches="tight", dpi=200)
+    plt.close(fig)
+    buf.seek(0)
+    return buf
+
+def dataframe_to_pdf_screenshot(df, title):
+    from PIL import Image
+
+    img_buf = dataframe_to_image(df, title)
+    img = Image.open(img_buf)
+    pdf = FPDF(orientation='L', unit='pt', format=[img.width, img.height])
+    pdf.add_page()
+    temp_img_path = "temp_table_img.png"
+    img.save(temp_img_path)
+    pdf.image(temp_img_path, x=0, y=0, w=img.width, h=img.height)
+    os.remove(temp_img_path)
+    pdf_bytes = pdf.output(dest='S').encode('latin1')
+    return BytesIO(pdf_bytes)
+
+# --- End of matplotlib-on-demand import hack ---
 
 SHEET_NAME = "Kerala Weekly Survey Automation Dashboard Test Run"
 
@@ -217,41 +258,6 @@ def extract_block_df(data, block):
         st.warning(f"Could not parse block as table: {err}")
         return pd.DataFrame()
 
-def dataframe_to_image(df, title=None):
-    ncols = len(df.columns)
-    nrows = len(df)
-    fig, ax = plt.subplots(figsize=(min(20, max(8, ncols*1.15)), 2.2 + 0.6*nrows))
-    ax.axis('off')
-    mpl_table = ax.table(cellText=df.values, colLabels=df.columns, loc='center', cellLoc='center')
-    mpl_table.auto_set_font_size(False)
-    mpl_table.set_fontsize(13)
-    mpl_table.scale(1.2, 1.1)
-    for key, cell in mpl_table.get_celld().items():
-        cell.set_linewidth(1.2)
-        cell.set_fontsize(13)
-        if key[0] == 0:
-            cell.set_fontweight('bold')
-    if title:
-        plt.title(title, fontsize=18, weight='bold', pad=18)
-    plt.tight_layout()
-    buf = BytesIO()
-    plt.savefig(buf, format="png", bbox_inches="tight", dpi=200)
-    plt.close(fig)
-    buf.seek(0)
-    return buf
-
-def dataframe_to_pdf_screenshot(df, title):
-    img_buf = dataframe_to_image(df, title)
-    img = Image.open(img_buf)
-    pdf = FPDF(orientation='L', unit='pt', format=[img.width, img.height])
-    pdf.add_page()
-    temp_img_path = "temp_table_img.png"
-    img.save(temp_img_path)
-    pdf.image(temp_img_path, x=0, y=0, w=img.width, h=img.height)
-    os.remove(temp_img_path)
-    pdf_bytes = pdf.output(dest='S').encode('latin1')
-    return BytesIO(pdf_bytes)
-
 def safe_float(val):
     try:
         return float(str(val).replace('%','').strip())
@@ -261,7 +267,6 @@ def safe_float(val):
 def plot_trend_ticker(df, key_prefix="comparative"):
     label_col = df.columns[0]
     candidate_cols = df.columns[1:]
-
     exclude_keywords = ['grand total', 'total', 'sample', 'difference']
     filtered_cols = []
     for col in candidate_cols:
@@ -270,15 +275,12 @@ def plot_trend_ticker(df, key_prefix="comparative"):
         if (not any(x in col_lower for x in exclude_keywords)
             and (('%' in first_val) or (0 <= safe_float(first_val) <= 100))):
             filtered_cols.append(col)
-
     if not filtered_cols:
         st.warning("No candidate columns found for trend plot.")
         return
-
     df_percent = df[[label_col] + filtered_cols].copy()
     mask_valid_tab = ~df_percent[label_col].astype(str).str.lower().str.contains('difference')
     df_percent = df_percent[mask_valid_tab]
-
     def to_num(s):
         try:
             return float(str(s).replace('%','').strip())
@@ -286,9 +288,9 @@ def plot_trend_ticker(df, key_prefix="comparative"):
             return float('nan')
     for col in filtered_cols:
         df_percent[col] = df_percent[col].apply(to_num)
-
     vals = df_percent[filtered_cols].values.flatten()
     vals = [v for v in vals if pd.notnull(v)]
+    min_y, max_y = 0, 100
     if vals:
         min_y = max(0, min(vals) - 5)
         max_y = min(100, max(vals) + 5)
@@ -296,16 +298,12 @@ def plot_trend_ticker(df, key_prefix="comparative"):
             max_y = min_y + 10
         if max_y > 100: max_y = 100
         if min_y < 0: min_y = 0
-    else:
-        min_y, max_y = 0, 100
-
     custom_colors = [
         "#ff4e50", "#1e90ff", "#ffd166", "#06d6a0", "#ef476f",
         "#118ab2", "#f9844a", "#43aa8b",
     ]
     marker_colors = custom_colors * ((len(filtered_cols) // len(custom_colors)) + 1)
     line_width = 4
-
     fig = go.Figure()
     for idx, col in enumerate(filtered_cols):
         fig.add_trace(
@@ -325,7 +323,6 @@ def plot_trend_ticker(df, key_prefix="comparative"):
                 )
             )
         )
-
     fig.update_layout(
         title="Candidate Trend Across Tabs/Sheets",
         xaxis_title=label_col,
@@ -337,7 +334,6 @@ def plot_trend_ticker(df, key_prefix="comparative"):
         font=dict(color="black"),
         legend=dict(bgcolor="rgba(0,0,0,0)")
     )
-
     st.plotly_chart(fig, use_container_width=True, key=f"{key_prefix}_ticker")
 
 def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
@@ -345,7 +341,6 @@ def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
     df = df[~df[label_col].astype(str).str.lower().str.contains('difference')]
     exclude_keywords = ['sample', 'total', 'grand']
     value_cols = [col for col in df.columns[1:] if not any(k in col.strip().lower() for k in exclude_keywords)]
-
     if colorway == "plotly":
         colors = px.colors.qualitative.Plotly
     else:
@@ -601,8 +596,10 @@ def comparative_dashboard(gc):
 
 if __name__ == "__main__":
     st.set_page_config(page_title="Kerala Survey Dashboard", layout="wide")
-    if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
-    if 'username' not in st.session_state: st.session_state['username'] = ""
+    if 'logged_in' not in st.session_state:
+        st.session_state['logged_in'] = False
+    if 'username' not in st.session_state:
+        st.session_state['username'] = ""
     sidebar_menu = st.sidebar.radio("Menu", ["Dashboard", "Set/Change Password"])
     if not st.session_state['logged_in'] and sidebar_menu == "Dashboard":
         login_form()
