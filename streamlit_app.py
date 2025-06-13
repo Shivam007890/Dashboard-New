@@ -9,7 +9,6 @@ import json
 import tempfile
 import plotly.graph_objects as go
 import plotly.express as px
-import base64
 
 SHEET_NAME = "Kerala Weekly Survey Automation Dashboard Test Run"
 
@@ -83,12 +82,6 @@ def inject_custom_css():
     }
     </style>
     """, unsafe_allow_html=True)
-
-def get_image_base64(img_path):
-    with open(img_path, "rb") as img_file:
-        img_bytes = img_file.read()
-    encoded = base64.b64encode(img_bytes).decode("utf-8")
-    return encoded
 
 def make_columns_unique(df):
     cols = pd.Series(df.columns)
@@ -183,6 +176,8 @@ def extract_block_df(data, block):
         return pd.DataFrame()
 
 def dataframe_to_pdf(df, title="Table Export"):
+    import textwrap
+
     pdf = FPDF("L", "mm", "A4")
     pdf.add_page()
     pdf.set_font("Arial", "B", 14)
@@ -190,15 +185,23 @@ def dataframe_to_pdf(df, title="Table Export"):
     pdf.set_font("Arial", "B", 9)
     col_width = (pdf.w - 20) / len(df.columns)
     row_height = 7
-    pdf.ln(2)
+
+    # Wrap headers if they're too long
+    wrapped_headers = []
     for col in df.columns:
-        pdf.cell(col_width, row_height, str(col), border=1, align='C')
-    pdf.ln()
+        lines = textwrap.wrap(str(col), width=14)
+        wrapped_headers.append('\n'.join(lines) if lines else str(col))
+
+    pdf.ln(2)
+    for header in wrapped_headers:
+        pdf.multi_cell(col_width, row_height, header, border=1, align='C', max_line_height=pdf.font_size)
+    pdf.ln(row_height * (max(header.count('\n')+1 for header in wrapped_headers)))
     pdf.set_font("Arial", "", 8)
     for _, row in df.iterrows():
         for val in row:
-            pdf.cell(col_width, row_height, str(val), border=1, align='C')
-        pdf.ln()
+            cell_val = str(val) if pd.notna(val) else ""
+            pdf.multi_cell(col_width, row_height, cell_val, border=1, align='C', max_line_height=pdf.font_size)
+        pdf.ln(row_height)
     pdf_bytes = pdf.output(dest='S').encode('latin1')
     return BytesIO(pdf_bytes)
 
@@ -248,6 +251,7 @@ def dashboard_geo_section(blocks, block_prefix, pivot_data, geo_name):
     st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_block_label}</h4>', unsafe_allow_html=True)
     show_centered_dataframe(filtered_df)
     st.markdown('</div>', unsafe_allow_html=True)
+    plot_horizontal_bar_plotly(filtered_df, key=f"{block_prefix}_{selected_block_label}_geo_summary_plot", colorway="plotly")
 
 def get_month_list(question_sheets):
     months = []
@@ -283,7 +287,6 @@ def extract_month_number(tab_name):
             return i+1
     return -1 # not found
 
-# --- Ticker (Comparative) Section ---
 def plot_trend_ticker(df, key_prefix="comparative"):
     label_col = df.columns[0]
     candidate_cols = df.columns[1:]
@@ -467,7 +470,6 @@ def individual_dashboard(gc):
         data = load_pivot_data(gc, SHEET_NAME, selected_sheet)
         blocks = find_cuts_and_blocks(data)
 
-        # --- Statewide reports as dropdown ---
         state_blocks = [b for b in blocks if b["label"].lower().startswith("state")]
         if state_blocks:
             state_options = [b["label"] for b in state_blocks]
@@ -481,8 +483,6 @@ def individual_dashboard(gc):
                 plot_horizontal_bar_plotly(df, key=f"state_{state_block['label']}_plot", colorway="plotly")
                 pdf_file = dataframe_to_pdf(df, f"Statewide Report - {selected_state_label}")
                 st.download_button("Download Statewide PDF", pdf_file, f"{selected_state_label}_statewide.pdf", "application/pdf")
-        # --- End Statewide reports ---
-
         geo_sections = [
             ("District", "District"),
             ("Zone", "Zone"),
