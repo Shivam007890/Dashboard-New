@@ -486,11 +486,15 @@ def dashboard_geo_section(blocks, block_prefix, pivot_data, geo_name):
     geo_col = df.columns[0]
     geo_values = df[geo_col].dropna().unique().tolist()
 
-    # Multi-select: allow user to pick multiple geo units at once
-    selection = st.multiselect(
-        f"Select one or more {geo_name}s to display", geo_values, default=geo_values,
-        key=f"{block_prefix}_multi_select"
-    )
+    # "Select All" checkbox for multi-select
+    select_all = st.checkbox(f"Select all {geo_name}s", value=True, key=f"{block_prefix}_select_all")
+    if select_all:
+        selection = geo_values
+    else:
+        selection = st.multiselect(
+            f"Select one or more {geo_name}s to display", geo_values, default=[],
+            key=f"{block_prefix}_multi_select"
+        )
     if not selection:
         st.info(f"Please select at least one {geo_name}.")
         return
