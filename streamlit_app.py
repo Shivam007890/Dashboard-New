@@ -9,6 +9,7 @@ import json
 import tempfile
 import plotly.graph_objects as go
 import plotly.express as px
+import textwrap
 
 SHEET_NAME = "Kerala Weekly Survey Automation Dashboard Test Run"
 
@@ -176,8 +177,6 @@ def extract_block_df(data, block):
         return pd.DataFrame()
 
 def dataframe_to_pdf(df, title="Table Export"):
-    import textwrap
-
     pdf = FPDF("L", "mm", "A4")
     pdf.add_page()
     pdf.set_font("Arial", "B", 14)
@@ -186,21 +185,31 @@ def dataframe_to_pdf(df, title="Table Export"):
     col_width = (pdf.w - 20) / len(df.columns)
     row_height = 7
 
-    # Wrap headers if they're too long
+    # Wrap headers to a reasonable width (change width=14 as needed)
     wrapped_headers = []
+    max_lines = 1
     for col in df.columns:
         lines = textwrap.wrap(str(col), width=14)
+        max_lines = max(max_lines, len(lines))
         wrapped_headers.append('\n'.join(lines) if lines else str(col))
 
-    pdf.ln(2)
+    y_start = pdf.get_y()
+    x_start = pdf.l_margin
     for header in wrapped_headers:
-        pdf.multi_cell(col_width, row_height, header, border=1, align='C', max_line_height=pdf.font_size)
-    pdf.ln(row_height * (max(header.count('\n')+1 for header in wrapped_headers)))
+        pdf.set_xy(x_start, y_start)
+        pdf.multi_cell(col_width, row_height, header, border=1, align='C')
+        x_start += col_width
+    pdf.ln(row_height * max_lines)
+
     pdf.set_font("Arial", "", 8)
     for _, row in df.iterrows():
+        x_start = pdf.l_margin
+        y_row = pdf.get_y()
         for val in row:
             cell_val = str(val) if pd.notna(val) else ""
-            pdf.multi_cell(col_width, row_height, cell_val, border=1, align='C', max_line_height=pdf.font_size)
+            pdf.set_xy(x_start, y_row)
+            pdf.multi_cell(col_width, row_height, cell_val, border=1, align='C')
+            x_start += col_width
         pdf.ln(row_height)
     pdf_bytes = pdf.output(dest='S').encode('latin1')
     return BytesIO(pdf_bytes)
