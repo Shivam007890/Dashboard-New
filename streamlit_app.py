@@ -182,35 +182,39 @@ def dataframe_to_pdf(df, title="Table Export"):
     pdf.set_font("Arial", "B", 14)
     pdf.cell(0, 10, title, ln=True, align="C")
     pdf.set_font("Arial", "B", 9)
-    col_width = (pdf.w - 20) / len(df.columns)
+    col_width = (pdf.w - 2 * pdf.l_margin) / len(df.columns)
     row_height = 7
 
-    # Wrap headers to a reasonable width (change width=14 as needed)
+    # WRAP HEADERS and compute max lines
     wrapped_headers = []
-    max_lines = 1
     for col in df.columns:
         lines = textwrap.wrap(str(col), width=14)
-        max_lines = max(max_lines, len(lines))
-        wrapped_headers.append('\n'.join(lines) if lines else str(col))
+        wrapped_headers.append(lines if lines else [""])
+    max_lines = max(len(lines) for lines in wrapped_headers)
 
-    y_start = pdf.get_y()
-    x_start = pdf.l_margin
-    for header in wrapped_headers:
-        pdf.set_xy(x_start, y_start)
-        pdf.multi_cell(col_width, row_height, header, border=1, align='C')
-        x_start += col_width
-    pdf.ln(row_height * max_lines)
+    # Print all header lines, one row at a time
+    for i in range(max_lines):
+        x = pdf.l_margin
+        y = pdf.get_y()
+        for header_lines in wrapped_headers:
+            text = header_lines[i] if i < len(header_lines) else ""
+            pdf.set_xy(x, y)
+            pdf.cell(col_width, row_height, text, border=1, align='C')
+            x += col_width
+        pdf.ln(row_height)
 
     pdf.set_font("Arial", "", 8)
+    # Print table rows
     for _, row in df.iterrows():
-        x_start = pdf.l_margin
-        y_row = pdf.get_y()
+        x = pdf.l_margin
+        y = pdf.get_y()
         for val in row:
             cell_val = str(val) if pd.notna(val) else ""
-            pdf.set_xy(x_start, y_row)
-            pdf.multi_cell(col_width, row_height, cell_val, border=1, align='C')
-            x_start += col_width
+            pdf.set_xy(x, y)
+            pdf.cell(col_width, row_height, cell_val, border=1, align='C')
+            x += col_width
         pdf.ln(row_height)
+
     pdf_bytes = pdf.output(dest='S').encode('latin1')
     return BytesIO(pdf_bytes)
 
