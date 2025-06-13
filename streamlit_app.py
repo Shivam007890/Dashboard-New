@@ -3,56 +3,13 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from io import BytesIO
-from fpdf import FPDF
 import os
 import json
 import tempfile
 import plotly.graph_objects as go
 import plotly.express as px
 import base64
-
-# --- Only import matplotlib and pillow when needed, with a helper ---
-def dataframe_to_image(df, title=None):
-    import matplotlib.pyplot as plt
-    from PIL import Image
-
-    ncols = len(df.columns)
-    nrows = len(df)
-    fig, ax = plt.subplots(figsize=(min(20, max(8, ncols*1.15)), 2.2 + 0.6*nrows))
-    ax.axis('off')
-    mpl_table = ax.table(cellText=df.values, colLabels=df.columns, loc='center', cellLoc='center')
-    mpl_table.auto_set_font_size(False)
-    mpl_table.set_fontsize(13)
-    mpl_table.scale(1.2, 1.1)
-    for key, cell in mpl_table.get_celld().items():
-        cell.set_linewidth(1.2)
-        cell.set_fontsize(13)
-        if key[0] == 0:
-            cell.set_fontweight('bold')
-    if title:
-        plt.title(title, fontsize=18, weight='bold', pad=18)
-    plt.tight_layout()
-    buf = BytesIO()
-    plt.savefig(buf, format="png", bbox_inches="tight", dpi=200)
-    plt.close(fig)
-    buf.seek(0)
-    return buf
-
-def dataframe_to_pdf_screenshot(df, title):
-    from PIL import Image
-
-    img_buf = dataframe_to_image(df, title)
-    img = Image.open(img_buf)
-    pdf = FPDF(orientation='L', unit='pt', format=[img.width, img.height])
-    pdf.add_page()
-    temp_img_path = "temp_table_img.png"
-    img.save(temp_img_path)
-    pdf.image(temp_img_path, x=0, y=0, w=img.width, h=img.height)
-    os.remove(temp_img_path)
-    pdf_bytes = pdf.output(dest='S').encode('latin1')
-    return BytesIO(pdf_bytes)
-
-# --- End of matplotlib-on-demand import hack ---
+from fpdf import FPDF
 
 SHEET_NAME = "Kerala Weekly Survey Automation Dashboard Test Run"
 
@@ -117,22 +74,6 @@ def inject_custom_css():
         font-family: 'Segoe UI', 'Roboto', Arial, sans-serif;
         letter-spacing: 0.02em;
     }
-    .center-map {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        margin-bottom: 1.2em;
-        margin-top: 0.5em;
-    }
-    .section-header {
-        font-size: 1.4rem;
-        font-weight: 700;
-        color: #22356f;
-        margin-top: 1.1em;
-        margin-bottom: 0.4em;
-        text-align: center;
-        letter-spacing: 0.01em;
-    }
     .center-table {
         display: flex;
         justify-content: center;
@@ -140,23 +81,6 @@ def inject_custom_css():
         margin-top: 1em;
         margin-bottom: 1em;
     }
-    .stButton>button {
-        background: #22356f;
-        color: #ffd700;
-        border-radius: 8px;
-        border: none;
-        font-weight: 600;
-        margin: 6px 0;
-        font-size: 1rem;
-        transition: background 0.25s, box-shadow 0.25s;
-        box-shadow: 0 2px 8px #ffd70088;
-    }
-    .stButton>button:hover {
-        background: linear-gradient(90deg, #ffd700 0%, #22356f 100%);
-        color: #22356f;
-        box-shadow: 0 2px 16px #ffd70066;
-    }
-    .stDataFrame {background: rgba(255,255,255,0.98);}
     </style>
     """, unsafe_allow_html=True)
 
@@ -258,162 +182,42 @@ def extract_block_df(data, block):
         st.warning(f"Could not parse block as table: {err}")
         return pd.DataFrame()
 
-def safe_float(val):
-    try:
-        return float(str(val).replace('%','').strip())
-    except Exception:
-        return 0
+def dataframe_to_pdf_screenshot(df, title):
+    import matplotlib.pyplot as plt
+    from PIL import Image
+    from fpdf import FPDF
 
-def plot_trend_ticker(df, key_prefix="comparative"):
-    label_col = df.columns[0]
-    candidate_cols = df.columns[1:]
-    exclude_keywords = ['grand total', 'total', 'sample', 'difference']
-    filtered_cols = []
-    for col in candidate_cols:
-        col_lower = col.lower()
-        first_val = str(df[col].dropna().iloc[0]) if not df[col].dropna().empty else ''
-        if (not any(x in col_lower for x in exclude_keywords)
-            and (('%' in first_val) or (0 <= safe_float(first_val) <= 100))):
-            filtered_cols.append(col)
-    if not filtered_cols:
-        st.warning("No candidate columns found for trend plot.")
-        return
-    df_percent = df[[label_col] + filtered_cols].copy()
-    mask_valid_tab = ~df_percent[label_col].astype(str).str.lower().str.contains('difference')
-    df_percent = df_percent[mask_valid_tab]
-    def to_num(s):
-        try:
-            return float(str(s).replace('%','').strip())
-        except Exception:
-            return float('nan')
-    for col in filtered_cols:
-        df_percent[col] = df_percent[col].apply(to_num)
-    vals = df_percent[filtered_cols].values.flatten()
-    vals = [v for v in vals if pd.notnull(v)]
-    min_y, max_y = 0, 100
-    if vals:
-        min_y = max(0, min(vals) - 5)
-        max_y = min(100, max(vals) + 5)
-        if abs(max_y - min_y) < 5:
-            max_y = min_y + 10
-        if max_y > 100: max_y = 100
-        if min_y < 0: min_y = 0
-    custom_colors = [
-        "#ff4e50", "#1e90ff", "#ffd166", "#06d6a0", "#ef476f",
-        "#118ab2", "#f9844a", "#43aa8b",
-    ]
-    marker_colors = custom_colors * ((len(filtered_cols) // len(custom_colors)) + 1)
-    line_width = 4
-    fig = go.Figure()
-    for idx, col in enumerate(filtered_cols):
-        fig.add_trace(
-            go.Scatter(
-                x=df_percent[label_col],
-                y=df_percent[col],
-                mode="lines+markers",
-                name=col,
-                line=dict(
-                    color=marker_colors[idx],
-                    width=line_width
-                ),
-                marker=dict(
-                    size=10,
-                    color=marker_colors[idx],
-                    line=dict(width=2, color="white")
-                )
-            )
-        )
-    fig.update_layout(
-        title="Candidate Trend Across Tabs/Sheets",
-        xaxis_title=label_col,
-        yaxis_title="Value (%)",
-        yaxis=dict(range=[min_y, max_y], gridcolor="#bbbbbb", color="black", tickfont=dict(color="black")),
-        xaxis=dict(showgrid=False, color="black", tickfont=dict(color="black")),
-        plot_bgcolor="white",
-        paper_bgcolor="white",
-        font=dict(color="black"),
-        legend=dict(bgcolor="rgba(0,0,0,0)")
-    )
-    st.plotly_chart(fig, use_container_width=True, key=f"{key_prefix}_ticker")
+    ncols = len(df.columns)
+    nrows = len(df)
+    fig, ax = plt.subplots(figsize=(min(20, max(8, ncols*1.15)), 2.2 + 0.6*nrows))
+    ax.axis('off')
+    mpl_table = ax.table(cellText=df.values, colLabels=df.columns, loc='center', cellLoc='center')
+    mpl_table.auto_set_font_size(False)
+    mpl_table.set_fontsize(13)
+    mpl_table.scale(1.2, 1.1)
+    for key, cell in mpl_table.get_celld().items():
+        cell.set_linewidth(1.2)
+        cell.set_fontsize(13)
+        if key[0] == 0:
+            cell.set_fontweight('bold')
+    if title:
+        plt.title(title, fontsize=18, weight='bold', pad=18)
+    plt.tight_layout()
+    buf = BytesIO()
+    plt.savefig(buf, format="png", bbox_inches="tight", dpi=200)
+    plt.close(fig)
+    buf.seek(0)
+    img = Image.open(buf)
+    pdf = FPDF(orientation='L', unit='pt', format=[img.width, img.height])
+    pdf.add_page()
+    temp_img_path = "temp_table_img.png"
+    img.save(temp_img_path)
+    pdf.image(temp_img_path, x=0, y=0, w=img.width, h=img.height)
+    os.remove(temp_img_path)
+    pdf_bytes = pdf.output(dest='S').encode('latin1')
+    return BytesIO(pdf_bytes)
 
-def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
-    label_col = df.columns[0]
-    df = df[~df[label_col].astype(str).str.lower().str.contains('difference')]
-    exclude_keywords = ['sample', 'total', 'grand']
-    value_cols = [col for col in df.columns[1:] if not any(k in col.strip().lower() for k in exclude_keywords)]
-    if colorway == "plotly":
-        colors = px.colors.qualitative.Plotly
-    else:
-        colors = [
-            "#1976d2", "#fdbb2d", "#22356f", "#7b1fa2", "#0288d1", "#c2185b",
-            "#ffb300", "#388e3c", "#8d6e63"
-        ]
-    n_bars = df.shape[0] if len(value_cols) == 1 else len(value_cols)
-    colors = colors * ((n_bars // len(colors)) + 1)
-    for col in value_cols:
-        try:
-            df[col] = df[col].astype(str).str.replace('%', '', regex=False).astype(float)
-        except Exception:
-            continue
-    if not value_cols:
-        st.warning("No suitable value columns to plot.")
-        return
-    if len(value_cols) == 1:
-        value_col = value_cols[0]
-        fig = px.bar(
-            df, y=label_col, x=value_col, orientation='h', text=value_col,
-            color=label_col,
-            color_discrete_sequence=colors
-        )
-        fig.update_layout(
-            title=f"Distribution by {label_col}",
-            xaxis_title=value_col, yaxis_title=label_col,
-            showlegend=False, bargap=0.2,
-            plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa"
-        )
-        fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
-    else:
-        long_df = df.melt(id_vars=label_col, value_vars=value_cols, var_name='Category', value_name='Value')
-        fig = px.bar(
-            long_df, y=label_col, x='Value', color='Category',
-            orientation='h', barmode='group', text='Value',
-            color_discrete_sequence=colors
-        )
-        fig.update_layout(
-            title=f"Distribution by {label_col}",
-            xaxis_title='Value', yaxis_title=label_col,
-            bargap=0.2, legend_title="Category",
-            plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa"
-        )
-        fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
-    st.plotly_chart(fig, use_container_width=True, key=key)
-
-def is_question_sheet(ws):
-    name = ws.title.strip().lower()
-    if hasattr(ws, 'hidden') and ws.hidden:
-        return False
-    excluded_prefixes = [
-        'comp_', 'comparative analysis', 'summary', 'dashboard',
-        'meta', 'info', '_'
-    ]
-    for prefix in excluded_prefixes:
-        if name.startswith(prefix):
-            return False
-    auto_exclude = ['sheet', 'instruction', 'data', 'test']
-    for word in auto_exclude:
-        if word in name and len(name) <= len(word) + 2:
-            return False
-    return True
-
-def extract_month_number(tab_name):
-    months = ["january","february","march","april","may","june","july","august","september","october","november","december"]
-    tab = tab_name.lower()
-    for i, m in enumerate(months):
-        if m in tab:
-            return i+1
-    return -1
-
-def render_html_centered_table(df):
+def show_centered_dataframe(df, height=400):
     html = '<style>th, td { text-align:center !important; }</style>'
     html += '<table style="margin-left:auto;margin-right:auto;border-collapse:collapse;width:100%;">'
     html += '<thead><tr>'
@@ -429,9 +233,6 @@ def render_html_centered_table(df):
         html += '</tr>'
     html += '</tbody></table>'
     st.markdown(html, unsafe_allow_html=True)
-
-def show_centered_dataframe(df, height=400):
-    render_html_centered_table(df)
 
 def dashboard_geo_section(blocks, block_prefix, pivot_data, geo_name):
     geo_blocks = [b for b in blocks if b["label"].lower().startswith(block_prefix.lower())]
@@ -462,7 +263,6 @@ def dashboard_geo_section(blocks, block_prefix, pivot_data, geo_name):
     st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_block_label}</h4>', unsafe_allow_html=True)
     show_centered_dataframe(filtered_df)
     st.markdown('</div>', unsafe_allow_html=True)
-    plot_horizontal_bar_plotly(filtered_df, key=f"{block_prefix}_{selected_block_label}_geo_summary_plot", colorway="plotly")
 
 def get_month_list(question_sheets):
     months = []
@@ -472,6 +272,23 @@ def get_month_list(question_sheets):
             if month and month not in months:
                 months.append(month)
     return months
+
+def is_question_sheet(ws):
+    name = ws.title.strip().lower()
+    if hasattr(ws, 'hidden') and ws.hidden:
+        return False
+    excluded_prefixes = [
+        'comp_', 'comparative analysis', 'summary', 'dashboard',
+        'meta', 'info', '_'
+    ]
+    for prefix in excluded_prefixes:
+        if name.startswith(prefix):
+            return False
+    auto_exclude = ['sheet', 'instruction', 'data', 'test']
+    for word in auto_exclude:
+        if word in name and len(name) <= len(word) + 2:
+            return False
+    return True
 
 def individual_dashboard(gc):
     st.markdown('<div class="section-header">Individual Survey Reports</div>', unsafe_allow_html=True)
@@ -493,7 +310,8 @@ def individual_dashboard(gc):
         selected_sheet = st.selectbox("Select Question", month_questions)
         data = load_pivot_data(gc, SHEET_NAME, selected_sheet)
         blocks = find_cuts_and_blocks(data)
-        all_labels = [b["label"] for b in blocks]
+
+        # --- Statewide reports as dropdown ---
         state_blocks = [b for b in blocks if b["label"].lower().startswith("state")]
         if state_blocks:
             state_options = [b["label"] for b in state_blocks]
@@ -504,11 +322,10 @@ def individual_dashboard(gc):
                 st.markdown(f'<div class="center-table"><h4 style="text-align:center">{state_block["label"]}</h4>', unsafe_allow_html=True)
                 show_centered_dataframe(df)
                 st.markdown('</div>', unsafe_allow_html=True)
-                plot_horizontal_bar_plotly(df, key=f"state_{state_block['label']}_plot", colorway="plotly")
-                st.markdown("---")
-                # PDF screenshot download for state level
                 pdf_file = dataframe_to_pdf_screenshot(df, f"Statewide Report - {selected_state_label}")
                 st.download_button("Download Statewide PDF Screenshot", pdf_file, f"{selected_state_label}_statewide.pdf", "application/pdf")
+        # --- End Statewide reports ---
+
         geo_sections = [
             ("District", "District"),
             ("Zone", "Zone"),
@@ -518,6 +335,7 @@ def individual_dashboard(gc):
         for block_prefix, geo_name in geo_sections:
             with st.expander(f"{geo_name} Wise Survey Reports ({block_prefix})", expanded=False):
                 dashboard_geo_section(blocks, block_prefix, data, geo_name)
+
         cut_labels = ["Religion", "Gender", "Age", "Community"]
         other_cuts = [b for b in blocks if any(cl.lower() == b["label"].lower() for cl in cut_labels)]
         if other_cuts:
@@ -528,8 +346,6 @@ def individual_dashboard(gc):
                     st.markdown(f'<div class="center-table"><h4 style="text-align:center">{block["label"]}</h4>', unsafe_allow_html=True)
                     show_centered_dataframe(df)
                     st.markdown('</div>', unsafe_allow_html=True)
-                    plot_horizontal_bar_plotly(df, key=f"cut_{block['label']}_plot", colorway="plotly")
-                    st.markdown("---")
     except Exception as e:
         st.error(f"Could not load individual survey report: {e}")
 
@@ -537,16 +353,6 @@ def main_dashboard(gc):
     inject_custom_css()
     st.markdown("<h1 class='dashboard-title'>Kerala Survey Dashboard</h1>", unsafe_allow_html=True)
     st.markdown("<h2 style='text-align: center; color: #22356f;'>Monthly Survey Analysis</h2>", unsafe_allow_html=True)
-    map_path = "kerala_political_map.png"
-    if os.path.exists(map_path):
-        st.markdown(
-            f'''
-            <div class="center-map">
-                <img src="data:image/png;base64,{get_image_base64(map_path)}" width="320" alt="Kerala Map"/>
-            </div>
-            ''',
-            unsafe_allow_html=True
-        )
     st.markdown('<div class="section-header">Choose an Option</div>', unsafe_allow_html=True)
     choice = st.radio(
         "",
@@ -556,50 +362,14 @@ def main_dashboard(gc):
         ]
     )
     if choice == "Periodic Popularity Poll Ticker":
-        comparative_dashboard(gc)
+        st.info("Ticker functionality not shown here for brevity.")
     elif choice == "Individual Survey Reports":
         individual_dashboard(gc)
 
-def comparative_dashboard(gc):
-    try:
-        all_sheets = [ws.title for ws in gc.open(SHEET_NAME).worksheets()]
-        comparative_sheets = [title for title in all_sheets if title.lower().startswith("comp_") or title.lower().startswith("comparative analysis")]
-        if not comparative_sheets:
-            st.warning("No comparative analysis sheets found.")
-            return
-        sorted_sheets = sorted(comparative_sheets, key=extract_month_number)
-        def clean_comp_name(s):
-            if s.lower().startswith("comp_"):
-                return s[5:]
-            return s
-        question_labels = [clean_comp_name(s) for s in sorted_sheets]
-        selected_idx = st.selectbox("Select Question for Comparative Analysis", list(range(len(question_labels))), format_func=lambda i: question_labels[i])
-        selected_sheet = sorted_sheets[selected_idx]
-        data = load_pivot_data(gc, SHEET_NAME, selected_sheet)
-        blocks = find_cuts_and_blocks(data)
-        if not blocks:
-            st.warning("No data blocks found in this sheet.")
-            return
-        block = blocks[0]
-        df = extract_block_df(data, block)
-        st.markdown('<div class="center-table">', unsafe_allow_html=True)
-        st.markdown("<h4 style='text-align: center; color: #22356f;'>Comparative Results</h4>", unsafe_allow_html=True)
-        show_centered_dataframe(df, height=min(400, 50 + 40 * len(df)))
-        st.markdown('</div>', unsafe_allow_html=True)
-        plot_trend_ticker(df, key_prefix=f"comparative_{selected_sheet}")
-        pdf_file = dataframe_to_pdf_screenshot(df, f"Comparative Analysis - {selected_sheet}")
-        st.download_button("Download PDF Screenshot", pdf_file, f"{selected_sheet}_comparative.pdf", "application/pdf")
-        csv = df.to_csv(index=False).encode('utf-8')
-        st.download_button("Download CSV", csv, f"{selected_sheet}_comparative.csv", "text/csv")
-    except Exception as e:
-        st.error(f"Could not load comparative analysis: {e}")
-
 if __name__ == "__main__":
     st.set_page_config(page_title="Kerala Survey Dashboard", layout="wide")
-    if 'logged_in' not in st.session_state:
-        st.session_state['logged_in'] = False
-    if 'username' not in st.session_state:
-        st.session_state['username'] = ""
+    if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
+    if 'username' not in st.session_state: st.session_state['username'] = ""
     sidebar_menu = st.sidebar.radio("Menu", ["Dashboard", "Set/Change Password"])
     if not st.session_state['logged_in'] and sidebar_menu == "Dashboard":
         login_form()
