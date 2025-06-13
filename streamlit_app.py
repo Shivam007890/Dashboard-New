@@ -289,30 +289,26 @@ def safe_float(val):
     except Exception:
         return 0
 
-def plot_comparative_with_lines(df, key_prefix="comparative"):
+def plot_trend_ticker(df, key_prefix="comparative"):
     label_col = df.columns[0]
     candidate_cols = df.columns[1:]
 
-    # Define words indicating columns to exclude from the trend chart
-    exclude_candidates = ['grand total', 'total', 'sample', 'difference']
-
-    # Filter out unwanted columns
+    # Exclude unwanted columns (Grand Total, Difference, Sample, etc.)
+    exclude_keywords = ['grand total', 'total', 'sample', 'difference']
     filtered_cols = []
     for col in candidate_cols:
         col_lower = col.lower()
         first_val = str(df[col].dropna().iloc[0]) if not df[col].dropna().empty else ''
-        # Only keep if not in exclude list, not a count, and is a percent (by value or by name)
-        if (not any(x in col_lower for x in exclude_candidates)
+        if (not any(x in col_lower for x in exclude_keywords)
             and (('%' in first_val) or (0 <= safe_float(first_val) <= 100))):
             filtered_cols.append(col)
 
     if not filtered_cols:
-        st.warning("No percentage candidate columns found for trend line plot.")
+        st.warning("No candidate columns found for trend plot.")
         return
 
     df_percent = df[[label_col] + filtered_cols].copy()
-
-    # Only use rows that are actual survey tabs (e.g. May, June), not rows with "difference"
+    # Only use rows that are actual tabs (May, June), not "difference"
     mask_valid_tab = ~df_percent[label_col].astype(str).str.lower().str.contains('difference')
     df_percent = df_percent[mask_valid_tab]
 
@@ -324,9 +320,9 @@ def plot_comparative_with_lines(df, key_prefix="comparative"):
     for col in filtered_cols:
         df_percent[col] = df_percent[col].apply(to_num)
 
-    # Line plot
     long_df = df_percent.melt(id_vars=label_col, value_vars=filtered_cols, var_name='Candidate', value_name='Value')
-    fig_line = px.line(
+
+    fig = px.line(
         long_df,
         x=label_col,
         y="Value",
@@ -335,13 +331,20 @@ def plot_comparative_with_lines(df, key_prefix="comparative"):
         title="Candidate Trend Across Tabs/Sheets",
         color_discrete_sequence=px.colors.qualitative.Plotly
     )
-    fig_line.update_layout(
-        plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa",
-        xaxis_title=label_col, yaxis_title="Value (%)",
-        yaxis_range=[0, 100]
+    fig.update_layout(
+        xaxis_title=label_col,
+        yaxis_title="Value (%)",
+        yaxis_range=[0, 100],
+        plot_bgcolor="#1d3557",  # Deep blue background
+        paper_bgcolor="#1d3557",
+        font=dict(color="white"),
+        legend=dict(bgcolor="rgba(0,0,0,0)")
     )
+    fig.update_xaxes(showgrid=False, color="white", tickfont=dict(color="white"))
+    fig.update_yaxes(showgrid=True, gridcolor="#457b9d", color="white", tickfont=dict(color="white"))
+    fig.update_traces(line=dict(width=3), marker=dict(size=8, line=dict(width=2, color='white')))
 
-    st.plotly_chart(fig_line, use_container_width=True, key=f"{key_prefix}_line")
+    st.plotly_chart(fig, use_container_width=True, key=f"{key_prefix}_ticker")
 
 def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
     label_col = df.columns[0]
@@ -531,7 +534,7 @@ def comparative_dashboard(gc):
         st.markdown("<h4 style='text-align: center; color: #22356f;'>Comparative Results</h4>", unsafe_allow_html=True)
         show_centered_dataframe(df, height=min(400, 50 + 40 * len(df)))
         st.markdown('</div>', unsafe_allow_html=True)
-        plot_comparative_with_lines(df, key_prefix=f"comparative_{selected_sheet}")
+        plot_trend_ticker(df, key_prefix=f"comparative_{selected_sheet}")
         csv = df.to_csv(index=False).encode('utf-8')
         st.download_button("Download CSV", csv, f"{selected_sheet}_comparative.csv", "text/csv")
         pdf_file = dataframe_to_pdf(df, f"Comparative Analysis - {selected_sheet}")
