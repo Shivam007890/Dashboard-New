@@ -192,7 +192,8 @@ def show_printable_table(df):
     html = f"""
     <style>
     .custom-table {{
-        width: 100%;
+        min-width: 1200px;
+        width: max-content;
         border-collapse: collapse;
         font-size: 15px;
         margin-bottom: 20px;
@@ -237,14 +238,15 @@ def show_printable_table(df):
             position: absolute; left: 0; top: 0; width: 100vw;
         }}
         .print-btn {{ display: none; }}
+        .custom-table {{ min-width: 100vw; width: 100vw; }}
     }}
     </style>
     <div id="printable-area">
         <button class="print-btn" onclick="window.print()">🖨️ Print Table / Save as PDF</button>
-        {html_table}
+        <div style="overflow-x:auto">{html_table}</div>
     </div>
     """
-    components.html(html, height=600, scrolling=True)
+    components.html(html, height=600, width=1300, scrolling=True)
 
 def dashboard_geo_section(blocks, block_prefix, pivot_data, geo_name):
     geo_blocks = [b for b in blocks if b["label"].lower().startswith(block_prefix.lower())]
