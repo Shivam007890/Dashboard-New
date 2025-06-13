@@ -10,8 +10,6 @@ import tempfile
 import plotly.graph_objects as go
 import plotly.express as px
 import base64
-from PIL import Image
-import matplotlib.pyplot as plt
 
 SHEET_NAME = "Kerala Weekly Survey Automation Dashboard Test Run"
 
@@ -217,45 +215,67 @@ def extract_block_df(data, block):
         st.warning(f"Could not parse block as table: {err}")
         return pd.DataFrame()
 
-# --- Screenshot PDF Export ---
-
-def dataframe_to_image(df, title=None):
-    # Set font size and table size based on columns and rows
-    ncols = len(df.columns)
-    nrows = len(df)
-    fig, ax = plt.subplots(figsize=(min(20, max(8, ncols*1.15)), 2.2 + 0.6*nrows))
-    ax.axis('off')
-    mpl_table = ax.table(cellText=df.values, colLabels=df.columns, loc='center', cellLoc='center')
-    mpl_table.auto_set_font_size(False)
-    mpl_table.set_fontsize(13)
-    mpl_table.scale(1.2, 1.1)
-    for key, cell in mpl_table.get_celld().items():
-        cell.set_linewidth(1.2)
-        cell.set_fontsize(13)
-        if key[0] == 0:
-            cell.set_fontweight('bold')
-    if title:
-        plt.title(title, fontsize=18, weight='bold', pad=18)
-    plt.tight_layout()
-    buf = BytesIO()
-    plt.savefig(buf, format="png", bbox_inches="tight", dpi=200)
-    plt.close(fig)
-    buf.seek(0)
-    return buf
-
-def dataframe_to_pdf_screenshot(df, title):
-    img_buf = dataframe_to_image(df, title)
-    img = Image.open(img_buf)
-    pdf = FPDF(orientation='L', unit='pt', format=[img.width, img.height])
+def dataframe_to_pdf(df, title):
+    pdf = FPDF()
     pdf.add_page()
-    temp_img_path = "temp_table_img.png"
-    img.save(temp_img_path)
-    pdf.image(temp_img_path, x=0, y=0, w=img.width, h=img.height)
-    os.remove(temp_img_path)
+    pdf.set_font("Arial", "B", 14)
+    max_title_width = pdf.w - 2 * pdf.l_margin
+    title_lines = []
+    if pdf.get_string_width(title) < max_title_width:
+        title_lines = [title]
+    else:
+        words = title.split(' ')
+        cur_line = ""
+        for word in words:
+            if pdf.get_string_width(cur_line + " " + word) <= max_title_width:
+                cur_line += " " + word
+            else:
+                title_lines.append(cur_line.strip())
+                cur_line = word
+        title_lines.append(cur_line.strip())
+    for tline in title_lines:
+        pdf.cell(0, 10, tline, ln=True, align="C")
+    pdf.set_font("Arial", "B", 10)
+    pdf.ln(4)
+    col_widths = []
+    max_col_width = (pdf.w - 2 * pdf.l_margin) / len(df.columns)
+    for col in df.columns:
+        w = max(pdf.get_string_width(str(col)) + 6, max((pdf.get_string_width(str(val)) + 4 for val in df[col]), default=10))
+        col_widths.append(min(max(w, 28), max_col_width))
+    row_height = pdf.font_size * 1.5
+    y_start = pdf.get_y()
+    max_header_height = 0
+    for col, w in zip(df.columns, col_widths):
+        x_before = pdf.get_x()
+        y_before = pdf.get_y()
+        pdf.multi_cell(w, row_height, str(col), border=1, align='C')
+        max_header_height = max(max_header_height, pdf.get_y() - y_before)
+        pdf.set_xy(x_before + w, y_before)
+    pdf.ln(max_header_height)
+    pdf.set_font("Arial", "", 10)
+    for idx, row in df.iterrows():
+        x_left = pdf.l_margin
+        y_top = pdf.get_y()
+        max_cell_height = 0
+        cell_heights = []
+        cell_values = []
+        for col, w in zip(df.columns, col_widths):
+            pdf.set_xy(x_left, y_top)
+            val = str(row[col]) if not pd.isna(row[col]) else ""
+            n_lines = len(pdf.multi_cell(w, row_height, val, border=0, align='C', split_only=True))
+            cell_height = n_lines * row_height
+            cell_heights.append(cell_height)
+            cell_values.append(val)
+            x_left += w
+        max_cell_height = max(cell_heights) if cell_heights else row_height
+        x_left = pdf.l_margin
+        for val, w in zip(cell_values, col_widths):
+            pdf.set_xy(x_left, y_top)
+            pdf.multi_cell(w, row_height, val, border=1, align='C')
+            x_left += w
+        pdf.set_y(y_top + max_cell_height)
     pdf_bytes = pdf.output(dest='S').encode('latin1')
     return BytesIO(pdf_bytes)
-
-# ----------------------------
 
 def safe_float(val):
     try:
@@ -540,14 +560,10 @@ def comparative_dashboard(gc):
         show_centered_dataframe(df, height=min(400, 50 + 40 * len(df)))
         st.markdown('</div>', unsafe_allow_html=True)
         plot_trend_ticker(df, key_prefix=f"comparative_{selected_sheet}")
-
-        # --- PDF Screenshot Download ---
-        pdf_file = dataframe_to_pdf_screenshot(df, f"Comparative Analysis - {selected_sheet}")
-        st.download_button("Download PDF Screenshot", pdf_file, f"{selected_sheet}_comparative.pdf", "application/pdf")
-        # ------------------------------
-        
         csv = df.to_csv(index=False).encode('utf-8')
         st.download_button("Download CSV", csv, f"{selected_sheet}_comparative.csv", "text/csv")
+        pdf_file = dataframe_to_pdf(df, f"Comparative Analysis - {selected_sheet}")
+        st.download_button("Download PDF", pdf_file, f"{selected_sheet}_comparative.pdf", "application/pdf")
     except Exception as e:
         st.error(f"Could not load comparative analysis: {e}")
 
