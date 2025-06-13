@@ -192,27 +192,31 @@ def dataframe_to_pdf(df, title="Table Export"):
         wrapped_headers.append(lines if lines else [""])
     max_lines = max(len(lines) for lines in wrapped_headers)
 
-    # Print all header lines, one row at a time
-    for i in range(max_lines):
-        x = pdf.l_margin
-        y = pdf.get_y()
-        for header_lines in wrapped_headers:
-            text = header_lines[i] if i < len(header_lines) else ""
-            pdf.set_xy(x, y)
-            pdf.cell(col_width, row_height, text, border=1, align='C')
-            x += col_width
-        pdf.ln(row_height)
+    # Pad all headers to same number of lines, join with '\n'
+    padded_headers = []
+    for lines in wrapped_headers:
+        padded = lines + [""] * (max_lines - len(lines))
+        padded_headers.append('\n'.join(padded))
+
+    # Print all headers as a single row (each cell same height)
+    x_start = pdf.l_margin
+    y_start = pdf.get_y()
+    for header in padded_headers:
+        pdf.set_xy(x_start, y_start)
+        pdf.multi_cell(col_width, row_height, header, border=1, align='C')
+        x_start += col_width
+    pdf.set_y(y_start + row_height * max_lines)
 
     pdf.set_font("Arial", "", 8)
     # Print table rows
     for _, row in df.iterrows():
-        x = pdf.l_margin
-        y = pdf.get_y()
+        x_start = pdf.l_margin
+        y_start = pdf.get_y()
         for val in row:
             cell_val = str(val) if pd.notna(val) else ""
-            pdf.set_xy(x, y)
+            pdf.set_xy(x_start, y_start)
             pdf.cell(col_width, row_height, cell_val, border=1, align='C')
-            x += col_width
+            x_start += col_width
         pdf.ln(row_height)
 
     pdf_bytes = pdf.output(dest='S').encode('latin1')
