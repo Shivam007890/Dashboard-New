@@ -2,14 +2,12 @@ import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
-from io import BytesIO
-from fpdf import FPDF
 import os
 import json
 import tempfile
 import plotly.graph_objects as go
 import plotly.express as px
-import textwrap
+import streamlit.components.v1 as components
 
 SHEET_NAME = "Kerala Weekly Survey Automation Dashboard Test Run"
 
@@ -80,6 +78,10 @@ def inject_custom_css():
         align-items: center;
         margin-top: 1em;
         margin-bottom: 1em;
+    }
+    .print-btn-container {
+        text-align: right;
+        margin-bottom: 0.5em;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -176,54 +178,33 @@ def extract_block_df(data, block):
         st.warning(f"Could not parse block as table: {err}")
         return pd.DataFrame()
 
-def dataframe_to_pdf(df, title="Table Export"):
-    pdf = FPDF("L", "mm", "A4")
-    pdf.add_page()
-    pdf.set_font("Arial", "B", 14)
-    pdf.cell(0, 10, title, ln=True, align="C")
-    pdf.set_font("Arial", "B", 9)
-    col_width = (pdf.w - 2 * pdf.l_margin) / len(df.columns)
-    row_height = 7
-
-    # WRAP HEADERS and compute max lines
-    wrapped_headers = []
-    for col in df.columns:
-        lines = textwrap.wrap(str(col), width=14)
-        wrapped_headers.append(lines if lines else [""])
-    max_lines = max(len(lines) for lines in wrapped_headers)
-
-    # Pad all headers to same number of lines, join with '\n'
-    padded_headers = []
-    for lines in wrapped_headers:
-        padded = lines + [""] * (max_lines - len(lines))
-        padded_headers.append('\n'.join(padded))
-
-    # Print all headers as a single row (each cell same height)
-    x_start = pdf.l_margin
-    y_start = pdf.get_y()
-    for header in padded_headers:
-        pdf.set_xy(x_start, y_start)
-        pdf.multi_cell(col_width, row_height, header, border=1, align='C')
-        x_start += col_width
-    pdf.set_y(y_start + row_height * max_lines)
-
-    pdf.set_font("Arial", "", 8)
-    # Print table rows
-    for _, row in df.iterrows():
-        x_start = pdf.l_margin
-        y_start = pdf.get_y()
-        for val in row:
-            cell_val = str(val) if pd.notna(val) else ""
-            pdf.set_xy(x_start, y_start)
-            pdf.cell(col_width, row_height, cell_val, border=1, align='C')
-            x_start += col_width
-        pdf.ln(row_height)
-
-    pdf_bytes = pdf.output(dest='S').encode('latin1')
-    return BytesIO(pdf_bytes)
+def show_print_button():
+    print_button = """
+    <div class="print-btn-container">
+    <button onclick="window.print()" style="padding:7px 20px;font-size:1rem;border-radius:3px;background:#1976d2;color:white;border:none;cursor:pointer;">
+    🖨️ Print Table / Save as PDF</button>
+    </div>
+    <style>
+    @media print {
+        body * { visibility: hidden !important; }
+        #printable-area, #printable-area * {
+            visibility: visible !important;
+        }
+        #printable-area {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100vw;
+        }
+    }
+    </style>
+    """
+    components.html(print_button, height=70)
 
 def show_centered_dataframe(df, height=400):
-    html = '<style>th, td { text-align:center !important; }</style>'
+    show_print_button()
+    html = '<div id="printable-area">'
+    html += '<style>th, td { text-align:center !important; }</style>'
     html += '<table style="margin-left:auto;margin-right:auto;border-collapse:collapse;width:100%;">'
     html += '<thead><tr>'
     html += f'<th style="border:1px solid #ddd;background:#f5f7fa;"></th>'
@@ -236,7 +217,7 @@ def show_centered_dataframe(df, height=400):
         for cell in row:
             html += f'<td style="border:1px solid #ddd;">{cell if pd.notna(cell) else ""}</td>'
         html += '</tr>'
-    html += '</tbody></table>'
+    html += '</tbody></table></div>'
     st.markdown(html, unsafe_allow_html=True)
 
 def dashboard_geo_section(blocks, block_prefix, pivot_data, geo_name):
@@ -459,8 +440,6 @@ def comparative_dashboard(gc):
         show_centered_dataframe(df, height=min(400, 50 + 40 * len(df)))
         st.markdown('</div>', unsafe_allow_html=True)
         plot_trend_ticker(df, key_prefix=f"comparative_{selected_sheet}")
-        pdf_file = dataframe_to_pdf(df, f"Comparative Analysis - {selected_sheet}")
-        st.download_button("Download PDF", pdf_file, f"{selected_sheet}_comparative.pdf", "application/pdf")
         csv = df.to_csv(index=False).encode('utf-8')
         st.download_button("Download CSV", csv, f"{selected_sheet}_comparative.csv", "text/csv")
     except Exception as e:
@@ -498,8 +477,8 @@ def individual_dashboard(gc):
                 show_centered_dataframe(df)
                 st.markdown('</div>', unsafe_allow_html=True)
                 plot_horizontal_bar_plotly(df, key=f"state_{state_block['label']}_plot", colorway="plotly")
-                pdf_file = dataframe_to_pdf(df, f"Statewide Report - {selected_state_label}")
-                st.download_button("Download Statewide PDF", pdf_file, f"{selected_state_label}_statewide.pdf", "application/pdf")
+                csv = df.to_csv(index=False).encode('utf-8')
+                st.download_button("Download Statewide CSV", csv, f"{selected_state_label}_statewide.csv", "text/csv")
         geo_sections = [
             ("District", "District"),
             ("Zone", "Zone"),
