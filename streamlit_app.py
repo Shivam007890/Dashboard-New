@@ -508,7 +508,7 @@ def dashboard_geo_section(blocks, block_prefix, pivot_data, geo_name):
 def main_dashboard(gc):
     inject_custom_css()
     st.markdown("<h1 class='dashboard-title'>Kerala Survey Dashboard</h1>", unsafe_allow_html=True)
-    st.markdown("<h2 style='text-align: center; color: #22356f;'>Weekly and Comparative Survey Analysis</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center; color: #22356f;'>Monthly Survey Analysis</h2>", unsafe_allow_html=True)
     map_path = "kerala_political_map.png"
     if os.path.exists(map_path):
         st.markdown(
