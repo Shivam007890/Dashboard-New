@@ -175,22 +175,59 @@ def extract_block_df(data, block):
         return pd.DataFrame()
 
 def show_printable_table(df):
-    html_table = '<table style="margin-left:auto;margin-right:auto;border-collapse:collapse;width:100%;">'
+    html_table = '<table class="custom-table">'
+    # Headers
     html_table += '<thead><tr>'
-    html_table += f'<th style="border:1px solid #ddd;background:#f5f7fa;"></th>'
     for col in df.columns:
-        html_table += f'<th style="border:1px solid #ddd;background:#f5f7fa;">{col}</th>'
+        html_table += f'<th>{col}</th>'
     html_table += '</tr></thead><tbody>'
+    # Rows
     for idx, row in df.iterrows():
         html_table += '<tr>'
-        html_table += f'<td style="border:1px solid #ddd;background:#f5f7fa;">{idx}</td>'
         for cell in row:
-            html_table += f'<td style="border:1px solid #ddd;">{cell if pd.notna(cell) else ""}</td>'
+            html_table += f'<td>{cell if pd.notna(cell) else ""}</td>'
         html_table += '</tr>'
     html_table += '</tbody></table>'
 
     html = f"""
     <style>
+    .custom-table {{
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 15px;
+        margin-bottom: 20px;
+    }}
+    .custom-table th {{
+        background: #f1f3f6;
+        font-weight: 600;
+        font-size: 16px;
+        padding: 8px 10px;
+        border: 1px solid #ccc;
+        text-align: center;
+        white-space: nowrap;
+    }}
+    .custom-table td {{
+        border: 1px solid #ccc;
+        padding: 8px 10px;
+        text-align: center;
+        white-space: nowrap;
+    }}
+    .custom-table tr:nth-child(even) {{
+        background: #fafbfc;
+    }}
+    .custom-table tr:hover {{
+        background: #e3f2fd;
+    }}
+    .print-btn {{
+        margin-bottom: 10px;
+        padding: 7px 20px;
+        font-size: 1rem;
+        border-radius: 3px;
+        background: #1976d2;
+        color: white;
+        border: none;
+        cursor: pointer;
+    }}
     @media print {{
         body * {{ visibility: hidden !important; }}
         #printable-area, #printable-area * {{
@@ -203,11 +240,7 @@ def show_printable_table(df):
     }}
     </style>
     <div id="printable-area">
-        <button class="print-btn" onclick="window.print()" 
-         style="padding:7px 20px;font-size:1rem;
-         border-radius:3px;background:#1976d2;color:white;
-         border:none;cursor:pointer;margin-bottom:10px;">
-        🖨️ Print Table / Save as PDF</button>
+        <button class="print-btn" onclick="window.print()">🖨️ Print Table / Save as PDF</button>
         {html_table}
     </div>
     """
