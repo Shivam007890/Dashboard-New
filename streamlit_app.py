@@ -243,42 +243,56 @@ def show_centered_dataframe(df, height=400):
     html += '</tbody></table></div>'
     st.markdown(html, unsafe_allow_html=True)
 
-def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
-    # --- Robust fix: Always use the "All" row, only party columns, and actual values ---
-    if df.shape[0] == 1 and df.shape[1] > 2:
-        # Wide format, only one row, options as columns
-        # Use the only row, but double-check if 'State' col is 'All'
-        row = df.iloc[0]
-        # Exclude meta columns
-        exclude_cols = ['state', 'grand total', 'sample count', '', None, np.nan]
-        party_cols = [col for col in df.columns if str(col).strip().lower() not in exclude_cols]
-        meta_cols = ['state', 'grand total', 'sample count']
-        options = [col for col in party_cols if col.lower() not in meta_cols]
-        # Get the corresponding values for options
-        df_plot = pd.DataFrame({
-            'Option': options,
-            'Value': [row[col] for col in options]
-        })
-        # Filter out any non-numeric/percent values
-        def is_percent_or_number(s):
-            s = str(s).replace('%','').replace(',','').replace('−','-').replace('–','-')
-            try:
-                float(s)
-                return True
-            except Exception:
-                return False
-        df_plot = df_plot[df_plot['Value'].apply(is_percent_or_number)]
-        df_plot['Value'] = df_plot['Value'].astype(str).str.replace('%','').str.replace(',','').str.replace('−','-').str.replace('–','-').astype(float)
-        label_col = 'Option'
-        value_cols = ['Value']
-        df = df_plot
+def plot_horizontal_bar_plotly(df, key=None, colorway="plotly", tab_name=None):
+    import numpy as np
+
+    # Special case ONLY for Nilambur - Who will you vote for - VN GE Normalization and VN AE Anawar Normalization
+    special_tabs = [
+        'vn ge normalization',
+        'vn ae anawar normalization'
+    ]
+    is_special = False
+    if tab_name:
+        tname_lower = tab_name.lower()
+        for s in special_tabs:
+            if s in tname_lower:
+                is_special = True
+                break
+
+    if is_special:
+        # Strongly: Always use the row where State == 'All' and only party columns
+        if "State" in df.columns:
+            all_row = df[df["State"].astype(str).str.strip().str.lower() == "all"]
+            if not all_row.empty:
+                row = all_row.iloc[0]
+                # Only use columns that are party options (skip meta columns)
+                party_cols = [col for col in df.columns if col not in ("State", "Grand Total", "Sample Count") and col.strip()]
+                df_plot = pd.DataFrame({
+                    'Option': party_cols,
+                    'Value': [row[col] for col in party_cols]
+                })
+                # Remove non-numeric/percent values
+                def is_percent_or_number(s):
+                    s = str(s).replace('%','').replace(',','').replace('−','-').replace('–','-')
+                    try:
+                        float(s)
+                        return True
+                    except Exception:
+                        return False
+                df_plot = df_plot[df_plot['Value'].apply(is_percent_or_number)]
+                df_plot['Value'] = df_plot['Value'].astype(str).str.replace('%','').str.replace(',','').str.replace('−','-').str.replace('–','-').astype(float)
+                label_col = 'Option'
+                value_cols = ['Value']
+                df = df_plot
+            else:
+                st.warning("Could not find 'All' row in table.")
+                return
+        else:
+            st.warning("No 'State' column found.")
+            return
     else:
         label_col = df.columns[0]
-        # Find the "All" row if it exists
-        idx = df[label_col].astype(str).str.strip().str.lower() == "all"
-        if idx.any():
-            df = df[idx]
-        # Only keep columns that are mostly numeric
+        df = df[~df[label_col].astype(str).str.lower().isin(['all', 'grand total', 'sample count', '', None, np.nan])]
         def is_numeric_series(series):
             cnt = 0
             for v in series:
@@ -294,36 +308,40 @@ def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
             return cnt / len(series) > 0.7 if len(series) > 0 else False
         value_cols = [col for col in df.columns[1:] if is_numeric_series(df[col])]
         for col in value_cols:
-            df[col] = (
-                df[col].astype(str)
-                .str.replace('%', '', regex=False)
-                .str.replace(',', '', regex=False)
-                .str.replace('−', '-', regex=False)
-                .str.replace('–', '-', regex=False)
-                .replace('', '0')
-                .replace('nan', '0')
-                .astype(float)
-            )
+            try:
+                df[col] = (
+                    df[col].astype(str)
+                    .str.replace('%', '', regex=False)
+                    .str.replace(',', '', regex=False)
+                    .str.replace('−', '-', regex=False)
+                    .str.replace('–', '-', regex=False)
+                    .replace('', '0')
+                    .replace('nan', '0')
+                    .astype(float)
+                )
+            except Exception as e:
+                st.warning(f"Could not convert column {col} to float: {e}")
+                continue
 
-    if not value_cols or df.empty:
+    if df.empty or (is_special and df.shape[0] == 0):
         st.warning("No suitable value columns to plot.")
         st.write("Available columns:", list(df.columns))
         return
 
     colors = px.colors.qualitative.Plotly
-    n_bars = df.shape[0] if len(value_cols) == 1 else len(value_cols)
+    n_bars = df.shape[0] if is_special or len(df.columns[1:]) == 1 else len(df.columns[1:])
     colors = colors * ((n_bars // len(colors)) + 1)
 
-    if len(value_cols) == 1:
-        value_col = value_cols[0]
+    if (is_special and df.shape[0] > 0) or (not is_special and len(df.columns) == 2):
+        value_col = 'Value' if is_special else df.columns[1]
         fig = px.bar(
-            df, y=label_col, x=value_col, orientation='h', text=value_col,
-            color=label_col,
+            df, y='Option' if is_special else label_col, x=value_col, orientation='h', text=value_col,
+            color='Option' if is_special else label_col,
             color_discrete_sequence=colors
         )
         fig.update_layout(
-            title=f"Distribution by {label_col}",
-            xaxis_title=value_col, yaxis_title=label_col,
+            title=f"Distribution by {'Option' if is_special else label_col}",
+            xaxis_title=value_col, yaxis_title=('Option' if is_special else label_col),
             showlegend=False, bargap=0.2,
             plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa"
         )
@@ -515,7 +533,7 @@ def nilambur_bypoll_dashboard(gc):
         st.markdown(f'<div class="center-table"><h4 style="text-align:center">{display_label} ({norm_option})</h4>', unsafe_allow_html=True)
         show_centered_dataframe(df)
         st.markdown('</div>', unsafe_allow_html=True)
-        plot_horizontal_bar_plotly(df, key=f"nilambur_{block['label']}_norm_plot", colorway="plotly")
+        plot_horizontal_bar_plotly(df, key=f"nilambur_{block['label']}_norm_plot", colorway="plotly", tab_name=tab_for_selection)
     except Exception as e:
         st.error(f"Could not load Nilambur Bypoll Survey: {e}")
 
