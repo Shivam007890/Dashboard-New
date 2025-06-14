@@ -249,7 +249,12 @@ def extract_nilambur_summary_block(data):
     if not best:
         raise Exception("Could not find correct Nilambur block")
     header_idx, idx, header, row = best
-    df = pd.DataFrame([row], columns=header)
+    # Return in special Option/Value DataFrame format for plotting
+    party_cols = [col for col in header if col not in ("State", "Grand Total", "Sample Count") and col.strip()]
+    df = pd.DataFrame({
+        "Option": party_cols,
+        "Value": [row[header.index(col)] if col in header else None for col in party_cols]
+    })
     return df
 
 def show_centered_dataframe(df, height=400):
@@ -272,104 +277,85 @@ def show_centered_dataframe(df, height=400):
 
 def plot_horizontal_bar_plotly(df, key=None, colorway="plotly", tab_name=None):
     import numpy as np
+
     nilambur_special = tab_name and (
         "vn ge normalization" in tab_name.lower() or
         "vn ae anawar normalization" in tab_name.lower()
     )
-    if nilambur_special and "State" in df.columns and df.shape[0] == 1:
-        all_row = df[df["State"].astype(str).str.strip().str.lower() == "all"]
-        if not all_row.empty:
-            row = all_row.iloc[0]
-            party_cols = [col for col in df.columns if col not in ("State", "Grand Total", "Sample Count") and col.strip()]
-            df_plot = pd.DataFrame({
-                'Option': party_cols,
-                'Value': [row[col] for col in party_cols]
-            })
-            def is_percent_or_number(s):
-                s = str(s).replace('%','').replace(',','').replace('−','-').replace('–','-')
-                try:
-                    float(s)
-                    return True
-                except Exception:
-                    return False
-            df_plot = df_plot[df_plot['Value'].apply(is_percent_or_number)]
-            df_plot['Value'] = df_plot['Value'].astype(str).str.replace('%','').str.replace(',','').str.replace('−','-').str.replace('–','-').astype(float)
-            label_col = 'Option'
-            value_cols = ['Value']
-            df = df_plot
-        else:
-            st.warning("Could not find 'All' row in table.")
-            return
-    else:
-        label_col = df.columns[0]
-        # For cuts like Religion/Gender/Age/Community, plot all rows and all numeric columns
-        def is_numeric_series(series):
-            cnt = 0
-            for v in series:
-                if pd.isna(v) or v == '':
-                    cnt += 1
-                    continue
-                s = str(v).replace('%', '').replace(',', '').replace('−', '-').replace('–', '-')
-                try:
-                    float(s)
-                    cnt += 1
-                except:
-                    pass
-            return cnt / len(series) > 0.7 if len(series) > 0 else False
-        value_cols = [col for col in df.columns[1:] if is_numeric_series(df[col])]
-        for col in value_cols:
-            try:
-                df[col] = (
-                    df[col].astype(str)
-                    .str.replace('%', '', regex=False)
-                    .str.replace(',', '', regex=False)
-                    .str.replace('−', '-', regex=False)
-                    .str.replace('–', '-', regex=False)
-                    .replace('', '0')
-                    .replace('nan', '0')
-                    .astype(float)
-                )
-            except Exception as e:
-                st.warning(f"Could not convert column {col} to float: {e}")
-                continue
 
-    if df.empty or (nilambur_special and df.shape[0] == 0):
-        st.warning("No suitable value columns to plot.")
-        st.write("Available columns:", list(df.columns))
-        return
-
-    colors = px.colors.qualitative.Plotly
-    n_bars = df.shape[0] if (nilambur_special and df.shape[0] == 1) or len(df.columns[1:]) == 1 else len(df.columns[1:])
-    colors = colors * ((n_bars // len(colors)) + 1)
-
-    if (nilambur_special and df.shape[0] == 1) or (not nilambur_special and len(df.columns) == 2):
-        value_col = 'Value' if (nilambur_special and df.shape[0] == 1) else df.columns[1]
+    # Nilambur Overall: Option/Value style
+    if nilambur_special and "Option" in df.columns and "Value" in df.columns and df.shape[0] == len(df["Option"].unique()):
+        value_col = "Value"
+        label_col = "Option"
+        df_plot = df.copy()
+        # Clean to float
+        df_plot['Value'] = df_plot['Value'].astype(str).str.replace('%','').str.replace(',','').str.replace('−','-').str.replace('–','-').astype(float)
         fig = px.bar(
-            df, y='Option' if (nilambur_special and df.shape[0] == 1) else label_col, x=value_col, orientation='h', text=value_col,
-            color='Option' if (nilambur_special and df.shape[0] == 1) else label_col,
-            color_discrete_sequence=colors
+            df_plot, y=label_col, x=value_col, orientation='h', text=value_col,
+            color=label_col,
+            color_discrete_sequence=px.colors.qualitative.Plotly
         )
         fig.update_layout(
-            title=f"Distribution by {'Option' if (nilambur_special and df.shape[0] == 1) else label_col}",
-            xaxis_title=value_col, yaxis_title=('Option' if (nilambur_special and df.shape[0] == 1) else label_col),
+            title=f"Distribution by {label_col}",
+            xaxis_title=value_col, yaxis_title=label_col,
             showlegend=False, bargap=0.2,
             plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa"
         )
         fig.update_traces(texttemplate='%{text:.2f}', textposition='outside')
-    else:
-        long_df = df.melt(id_vars=label_col, value_vars=value_cols, var_name='Category', value_name='Value')
-        fig = px.bar(
-            long_df, y=label_col, x='Value', color='Category',
-            orientation='h', barmode='group', text='Value',
-            color_discrete_sequence=colors
-        )
-        fig.update_layout(
-            title=f"Distribution by {label_col}",
-            xaxis_title='Value', yaxis_title=label_col,
-            bargap=0.2, legend_title="Category",
-            plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa"
-        )
-        fig.update_traces(texttemplate='%{text:.2f}', textposition='outside')
+        st.plotly_chart(fig, use_container_width=True, key=key)
+        return
+
+    # Cuts: melt all party columns
+    label_col = df.columns[0]
+    # Find all numeric columns (party columns)
+    def is_numeric_series(series):
+        cnt = 0
+        for v in series:
+            if pd.isna(v) or v == '':
+                cnt += 1
+                continue
+            s = str(v).replace('%', '').replace(',', '').replace('−', '-').replace('–', '-')
+            try:
+                float(s)
+                cnt += 1
+            except:
+                pass
+        return cnt / len(series) > 0.7 if len(series) > 0 else False
+    value_cols = [col for col in df.columns[1:] if is_numeric_series(df[col])]
+    for col in value_cols:
+        try:
+            df[col] = (
+                df[col].astype(str)
+                .str.replace('%', '', regex=False)
+                .str.replace(',', '', regex=False)
+                .str.replace('−', '-', regex=False)
+                .str.replace('–', '-', regex=False)
+                .replace('', '0')
+                .replace('nan', '0')
+                .astype(float)
+            )
+        except Exception as e:
+            st.warning(f"Could not convert column {col} to float: {e}")
+            continue
+
+    if not value_cols or df.empty:
+        st.warning("No suitable value columns to plot.")
+        st.write("Available columns:", list(df.columns))
+        return
+
+    long_df = df.melt(id_vars=label_col, value_vars=value_cols, var_name='Category', value_name='Value')
+    fig = px.bar(
+        long_df, y=label_col, x='Value', color='Category',
+        orientation='h', barmode='group', text='Value',
+        color_discrete_sequence=px.colors.qualitative.Plotly
+    )
+    fig.update_layout(
+        title=f"Distribution by {label_col}",
+        xaxis_title='Value', yaxis_title=label_col,
+        bargap=0.2, legend_title="Category",
+        plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa"
+    )
+    fig.update_traces(texttemplate='%{text:.2f}', textposition='outside')
     st.plotly_chart(fig, use_container_width=True, key=key)
 
 def dashboard_geo_section(blocks, block_prefix, pivot_data, geo_name):
@@ -525,8 +511,7 @@ def nilambur_bypoll_dashboard(gc):
         summary_selected = st.selectbox("Choose Summary Type", summary_options)
         allowed_block_labels = summary_label_map.get(summary_selected, [])
         blocks = find_cuts_and_blocks(data, allowed_blocks=allowed_block_labels)
-
-        # FIX: Only use special "All" row logic for "Overall Summary"
+        # Use special Option/Value logic only for Overall Summary
         if (
             summary_selected == "Overall Summary"
             and (
