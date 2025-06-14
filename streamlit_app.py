@@ -7,7 +7,6 @@ import json
 import tempfile
 import plotly.express as px
 import base64
-import re
 
 SHEET_NAME = "Kerala Weekly Survey Automation Dashboard Test Run"
 
@@ -153,15 +152,6 @@ def load_pivot_data(_gc, sheet_name, worksheet_name):
     data = ws.get_all_values()
     return data
 
-def get_month_list(question_sheets):
-    months = []
-    for name in question_sheets:
-        if "-" in name:
-            month = name.split("-")[0].strip()
-            if month and month not in months:
-                months.append(month)
-    return months
-
 def find_cuts_and_blocks(data, allowed_blocks=None):
     blocks = []
     for i, row in enumerate(data):
@@ -193,7 +183,7 @@ def find_cuts_and_blocks(data, allowed_blocks=None):
                 while j < len(data) and any(str(cell).strip() for cell in data[j]):
                     j += 1
                 blocks.append({
-                    "label": "Comparative Results",
+                    "label": "Overall Summary",
                     "start": i-1 if i > 0 else 0,
                     "header": i,
                     "data_start": i+1,
@@ -243,109 +233,65 @@ def show_centered_dataframe(df, height=400):
     html += '</tbody></table></div>'
     st.markdown(html, unsafe_allow_html=True)
 
-def plot_horizontal_bar_plotly(df, key=None, colorway="plotly", tab_name=None):
-    if "Option" in df.columns and "Value" in df.columns and df.shape[0] > 0:
-        df_plot = df.copy()
-        df_plot['Value'] = df_plot['Value'].astype(str).str.replace('%','').str.replace(',','').str.replace('−','-').str.replace('–','-').astype(float)
+def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
+    label_col = df.columns[0]
+    df = df[~df[label_col].astype(str).str.lower().str.contains('difference')]
+    exclude_keywords = ['sample', 'total', 'grand']
+    value_cols = [col for col in df.columns[1:] if not any(k in col.strip().lower() for k in exclude_keywords)]
+    if colorway == "plotly":
+        colors = px.colors.qualitative.Plotly
+    else:
+        colors = [
+            "#1976d2", "#fdbb2d", "#22356f", "#7b1fa2", "#0288d1", "#c2185b",
+            "#ffb300", "#388e3c", "#8d6e63"
+        ]
+    n_bars = df.shape[0] if len(value_cols) == 1 else len(value_cols)
+    colors = colors * ((n_bars // len(colors)) + 1)
+    for col in value_cols:
+        try:
+            df[col] = df[col].astype(str).str.replace('%', '', regex=False).astype(float)
+        except Exception:
+            continue
+    if not value_cols:
+        st.warning("No suitable value columns to plot.")
+        return
+    if len(value_cols) == 1:
+        value_col = value_cols[0]
         fig = px.bar(
-            df_plot, y='Option', x='Value', orientation='h', text='Value',
-            color='Option',
-            color_discrete_sequence=px.colors.qualitative.Plotly
+            df, y=label_col, x=value_col, orientation='h', text=value_col,
+            color=label_col,
+            color_discrete_sequence=colors
         )
         fig.update_layout(
-            title=f"Distribution by Option",
-            xaxis_title="Value", yaxis_title="Option",
+            title=f"Distribution by {label_col}",
+            xaxis_title=value_col, yaxis_title=label_col,
             showlegend=False, bargap=0.2,
             plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa"
         )
-        fig.update_traces(texttemplate='%{text:.2f}', textposition='outside')
-        st.plotly_chart(fig, use_container_width=True, key=key)
-        return
-
-    label_col = df.columns[0]
-    def is_numeric_series(series):
-        cnt = 0
-        for v in series:
-            if pd.isna(v) or v == '':
-                cnt += 1
-                continue
-            s = str(v).replace('%', '').replace(',', '').replace('−', '-').replace('–', '-')
-            try:
-                float(s)
-                cnt += 1
-            except:
-                pass
-        return cnt / len(series) > 0.7 if len(series) > 0 else False
-    value_cols = [col for col in df.columns[1:] if is_numeric_series(df[col])]
-    for col in value_cols:
-        try:
-            df[col] = (
-                df[col].astype(str)
-                .str.replace('%', '', regex=False)
-                .str.replace(',', '', regex=False)
-                .str.replace('−', '-', regex=False)
-                .str.replace('–', '-', regex=False)
-                .replace('', '0')
-                .replace('nan', '0')
-                .astype(float)
-            )
-        except Exception as e:
-            st.warning(f"Could not convert column {col} to float: {e}")
-            continue
-
-    if not value_cols or df.empty:
-        st.warning("No suitable value columns to plot.")
-        st.write("Available columns:", list(df.columns))
-        return
-
-    long_df = df.melt(id_vars=label_col, value_vars=value_cols, var_name='Category', value_name='Value')
-    fig = px.bar(
-        long_df, y=label_col, x='Value', color='Category',
-        orientation='h', barmode='group', text='Value',
-        color_discrete_sequence=px.colors.qualitative.Plotly
-    )
-    fig.update_layout(
-        title=f"Distribution by {label_col}",
-        xaxis_title='Value', yaxis_title=label_col,
-        bargap=0.2, legend_title="Category",
-        plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa"
-    )
-    fig.update_traces(texttemplate='%{text:.2f}', textposition='outside')
+        fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
+    else:
+        long_df = df.melt(id_vars=label_col, value_vars=value_cols, var_name='Category', value_name='Value')
+        fig = px.bar(
+            long_df, y=label_col, x='Value', color='Category',
+            orientation='h', barmode='group', text='Value',
+            color_discrete_sequence=colors
+        )
+        fig.update_layout(
+            title=f"Distribution by {label_col}",
+            xaxis_title='Value', yaxis_title=label_col,
+            bargap=0.2, legend_title="Category",
+            plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa"
+        )
+        fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     st.plotly_chart(fig, use_container_width=True, key=key)
-
-def extract_overall_summary_by_block_label(data):
-    """
-    Finds the first block whose label is 'State Summary' (case-insensitive, stripped of whitespace/unicode),
-    then fetches the header (next row) and first data row (next row after header).
-    Returns a dataframe with the header and data.
-    """
-    def clean(s):
-        if not isinstance(s, str):
-            return s
-        return re.sub(r'[\u200B-\u200F\u202A-\u202E\u2060-\u206F]', '', s).strip().lower()
-    for i, row in enumerate(data):
-        if row and clean(row[0]) == "state summary":
-            header = data[i+1] if i+1 < len(data) else []
-            row_all = data[i+2] if i+2 < len(data) else []
-            if header and row_all and clean(row_all[0]) == "all":
-                col_count = max(len(header), len(row_all))
-                header = [h if h else f"Column_{j}" for j, h in enumerate(header[:col_count])]
-                row_all = row_all[:col_count] + ['']*(col_count-len(row_all))
-                return pd.DataFrame([row_all], columns=header)
-            if i+3 < len(data):
-                row_all = data[i+3]
-                if row_all and clean(row_all[0]) == "all":
-                    col_count = max(len(header), len(row_all))
-                    header = [h if h else f"Column_{j}" for j, h in enumerate(header[:col_count])]
-                    row_all = row_all[:col_count] + ['']*(col_count-len(row_all))
-                    return pd.DataFrame([row_all], columns=header)
-    return pd.DataFrame()
 
 def nilambur_bypoll_dashboard(gc):
     st.markdown('<div class="section-header">Nilambur Bypoll Survey</div>', unsafe_allow_html=True)
     try:
+        # List all Nilambur tabs in the spreadsheet
         all_ws = gc.open(SHEET_NAME).worksheets()
         nilambur_tabs = [ws.title for ws in all_ws if ws.title.lower().startswith("nilambur - ")]
+        # Find all unique questions (normalize to just question + normalisation)
         question_norm_tabs = []
         for t in nilambur_tabs:
             parts = t.split(" - ")
@@ -353,25 +299,26 @@ def nilambur_bypoll_dashboard(gc):
                 question = parts[1].strip()
                 norm = parts[2].strip()
                 question_norm_tabs.append((question, norm, t))
+        # Organize mapping: question -> [norms]
         question_map = {}
         for question, norm, tab in question_norm_tabs:
             if question not in question_map:
                 question_map[question] = []
             question_map[question].append((norm, tab))
+        # Question selector
         question_options = list(question_map.keys())
         if not question_options:
             st.warning("No Nilambur Bypoll Survey tabs found in this workbook.")
             return
         selected_question = st.selectbox("Select Nilambur Question", question_options)
+        # Norm selector below question (now includes VN GE Normalization)
         norms_for_question = [norm for norm, tab in question_map[selected_question]]
         norm_option = st.selectbox("Select Normalisation", norms_for_question)
+        # Find the tab for this question + norm
         tab_for_selection = next(tab for norm, tab in question_map[selected_question] if norm == norm_option)
+        # Load data
         data = load_pivot_data(gc, SHEET_NAME, tab_for_selection)
-
-        st.write("DEBUG: Showing all rows in this Nilambur tab. Use this to verify header/All row positions.")
-        for i, row in enumerate(data):
-            st.write(f"{i}: {row}")
-
+        # Allow Overall, Religion, Gender, Age, Community summaries
         summary_options = ["Overall Summary", "Religion Summary", "Gender Summary", "Age Summary", "Community Summary"]
         summary_label_map = {
             "Overall Summary": ["overall summary", "state summary", "all"],
@@ -382,156 +329,28 @@ def nilambur_bypoll_dashboard(gc):
         }
         summary_selected = st.selectbox("Choose Summary Type", summary_options)
         allowed_block_labels = summary_label_map.get(summary_selected, [])
-
-        if summary_selected == "Overall Summary":
-            df = extract_overall_summary_by_block_label(data)
-            if df.empty:
-                st.warning("Could not find the correct Nilambur Overall Summary block.")
-                return
-            display_label = summary_selected
-            st.markdown(f'<div class="center-table"><h4 style="text-align:center">{display_label} ({norm_option})</h4>', unsafe_allow_html=True)
-            st.dataframe(df)
-            st.markdown('</div>', unsafe_allow_html=True)
-            row = df.iloc[0]
-            party_cols = [col for col in df.columns if col not in ("State", "Grand Total", "Sample Count") and col.strip()]
-            df_plot = pd.DataFrame({
-                'Option': party_cols,
-                'Value': [row[col] for col in party_cols]
-            })
-            plot_horizontal_bar_plotly(df_plot, key=f"nilambur_{display_label}_norm_plot", colorway="plotly", tab_name=tab_for_selection)
-        else:
-            blocks = find_cuts_and_blocks(data, allowed_blocks=allowed_block_labels)
-            if not blocks:
-                st.warning("No data block found for summary type in this tab.")
-                return
-            block = blocks[0]
-            df = extract_block_df(data, block)
-            if df.empty:
-                st.warning("No data table found for this summary.")
-                return
-            display_label = summary_selected
-            st.markdown(f'<div class="center-table"><h4 style="text-align:center">{display_label} ({norm_option})</h4>', unsafe_allow_html=True)
-            st.dataframe(df)
-            st.markdown('</div>', unsafe_allow_html=True)
-            plot_horizontal_bar_plotly(df, key=f"nilambur_{display_label}_norm_plot", colorway="plotly", tab_name=tab_for_selection)
-    except Exception as e:
-        st.error(f"Could not load Nilambur Bypoll Survey: {e}")
-
-def dashboard_geo_section(blocks, block_prefix, pivot_data, geo_name):
-    geo_blocks = [b for b in blocks if b["label"].lower().startswith(block_prefix.lower())]
-    if not geo_blocks:
-        st.info(f"No block found with label starting with {block_prefix}.")
-        return
-    block_labels = [b["label"] for b in geo_blocks]
-    selected_block_label = st.selectbox(f"Select {geo_name} Report Type", block_labels)
-    block = next(b for b in geo_blocks if b["label"] == selected_block_label)
-    df = extract_block_df(pivot_data, block)
-    if df.empty:
-        st.warning(f"No data table found for {selected_block_label}.")
-        return
-    geo_col = df.columns[0]
-    geo_values = df[geo_col].dropna().unique().tolist()
-    select_all = st.checkbox(f"Select all {geo_name}s", value=True, key=f"{block_prefix}_select_all")
-    if select_all:
-        selection = geo_values
-    else:
-        selection = st.multiselect(
-            f"Select one or more {geo_name}s to display", geo_values, default=[],
-            key=f"{block_prefix}_multi_select"
-        )
-    if not selection:
-        st.info(f"Please select at least one {geo_name}.")
-        return
-    filtered_df = df[df[geo_col].isin(selection)]
-    st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_block_label}</h4>', unsafe_allow_html=True)
-    show_centered_dataframe(filtered_df)
-    st.markdown('</div>', unsafe_allow_html=True)
-    plot_horizontal_bar_plotly(filtered_df, key=f"{block_prefix}_{selected_block_label}_geo_summary_plot", colorway="plotly")
-
-def comparative_dashboard(gc):
-    st.markdown('<div class="section-header">Comparative Analysis (Overall Only)</div>', unsafe_allow_html=True)
-    try:
-        all_ws = gc.open(SHEET_NAME).worksheets()
-        comparative_sheets = [ws.title for ws in all_ws if ws.title.lower().startswith("comp_") or ws.title.lower().startswith("comparative analysis")]
-        if not comparative_sheets:
-            st.warning("No comparative analysis sheets found.")
-            return
-        selected_sheet = st.selectbox("Select Comparative Sheet", comparative_sheets)
-        data = load_pivot_data(gc, SHEET_NAME, selected_sheet)
-        blocks = find_cuts_and_blocks(data)
+        blocks = find_cuts_and_blocks(data, allowed_blocks=allowed_block_labels)
         if not blocks:
-            st.warning("No data blocks found in this sheet.")
+            st.warning("No data block found for summary type in this tab.")
             return
         block = blocks[0]
         df = extract_block_df(data, block)
-        st.markdown('<div class="center-table">', unsafe_allow_html=True)
-        st.markdown("<h4 style='text-align: center; color: #22356f;'>Comparative Results</h4>", unsafe_allow_html=True)
-        show_centered_dataframe(df, height=min(400, 50 + 40 * len(df)))
+        if df.empty:
+            st.warning("No data table found for this summary.")
+            return
+        display_label = block["label"]
+        if summary_selected == "Overall Summary":
+            display_label = "Overall Summary"
+        else:
+            for s in ["state + ", "state+", "state "]:
+                if display_label.lower().startswith(s):
+                    display_label = display_label[len(s):].lstrip()
+        st.markdown(f'<div class="center-table"><h4 style="text-align:center">{display_label} ({norm_option})</h4>', unsafe_allow_html=True)
+        show_centered_dataframe(df)
         st.markdown('</div>', unsafe_allow_html=True)
-        plot_horizontal_bar_plotly(df, key=f"comparative_{selected_sheet}")
-        csv = df.to_csv(index=False).encode('utf-8')
-        st.download_button("Download CSV", csv, f"{selected_sheet}_comparative.csv", "text/csv")
+        plot_horizontal_bar_plotly(df, key=f"nilambur_{block["label"]}_norm_plot", colorway="plotly")
     except Exception as e:
-        st.error(f"Could not load comparative analysis: {e}")
-
-def individual_dashboard(gc):
-    st.markdown('<div class="section-header">Individual Survey Reports</div>', unsafe_allow_html=True)
-    try:
-        all_ws = gc.open(SHEET_NAME).worksheets()
-        question_sheets = [ws.title for ws in all_ws if not ws.title.lower().startswith("comp_") and not ws.title.lower().startswith("comparative analysis") and not ws.title.lower().startswith("nilambur")]
-        if not question_sheets:
-            st.warning("No question sheets found.")
-            return
-        months = get_month_list(question_sheets)
-        if months:
-            selected_month = st.selectbox("Select Month", months)
-            question_sheets_filtered = [qs for qs in question_sheets if qs.startswith(selected_month)]
-        else:
-            selected_month = None
-            question_sheets_filtered = question_sheets
-        if not question_sheets_filtered:
-            st.warning("No sheets found for selected month.")
-            return
-        selected_sheet = st.selectbox("Select Question Sheet", question_sheets_filtered)
-        data = load_pivot_data(gc, SHEET_NAME, selected_sheet)
-        blocks = find_cuts_and_blocks(data)
-        state_blocks = [b for b in blocks if b["label"].lower().startswith("state")]
-        if state_blocks:
-            state_labels = [b["label"] for b in state_blocks]
-            selected_state_label = st.selectbox("Select State Wide Survey Report", state_labels)
-            selected_state_block = next(b for b in state_blocks if b["label"] == selected_state_label)
-            df = extract_block_df(data, selected_state_block)
-            if not df.empty:
-                st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_state_label}</h4>', unsafe_allow_html=True)
-                show_centered_dataframe(df)
-                st.markdown('</div>', unsafe_allow_html=True)
-                plot_horizontal_bar_plotly(df, key=f"state_{selected_state_label}_plot", colorway="plotly")
-                st.markdown("---")
-        else:
-            st.info("No State Wide Survey Reports found in this sheet.")
-        geo_sections = [
-            ("District", "District"),
-            ("Zone", "Zone"),
-            ("Region", "Region"),
-            ("AC", "Assembly Constituency"),
-        ]
-        for block_prefix, geo_name in geo_sections:
-            with st.expander(f"{geo_name} Wise Survey Reports ({block_prefix})", expanded=False):
-                dashboard_geo_section(blocks, block_prefix, data, geo_name)
-        cut_labels = ["Religion", "Gender", "Age", "Community"]
-        other_cuts = [b for b in blocks if any(cl.lower() == b["label"].lower() for cl in cut_labels)]
-        if other_cuts:
-            with st.expander("Other Cuts Summary", expanded=False):
-                for block in other_cuts:
-                    df = extract_block_df(data, block)
-                    if df.empty: continue
-                    st.markdown(f'<div class="center-table"><h4 style="text-align:center">{block["label"]}</h4>', unsafe_allow_html=True)
-                    show_centered_dataframe(df)
-                    st.markdown('</div>', unsafe_allow_html=True)
-                    plot_horizontal_bar_plotly(df, key=f"cut_{block['label']}_plot", colorway="plotly")
-                    st.markdown("---")
-    except Exception as e:
-        st.error(f"Could not load individual survey report: {e}")
+        st.error(f"Could not load Nilambur Bypoll Survey: {e}")
 
 def main_dashboard(gc):
     inject_custom_css()
@@ -562,6 +381,8 @@ def main_dashboard(gc):
         individual_dashboard(gc)
     elif choice == "Nilambur Bypoll Survey":
         nilambur_bypoll_dashboard(gc)
+
+# ... (comparative_dashboard, individual_dashboard and other helpers as previously defined) ...
 
 if __name__ == "__main__":
     st.set_page_config(page_title="Kerala Survey Dashboard", layout="wide")
