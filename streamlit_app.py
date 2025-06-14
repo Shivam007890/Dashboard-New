@@ -320,19 +320,21 @@ def clean_cell(s):
     return re.sub(r'[\u200B-\u200F\u202A-\u202E\u2060-\u206F]', '', s).strip()
 
 def extract_nilambur_overall_summary_block(data):
+    pairs = []
     for i, row in enumerate(data):
         row_clean = [clean_cell(cell) for cell in row]
         if row_clean and row_clean[0].lower() == "state":
-            # Next row is 'All'
             if i+1 < len(data):
                 all_row_clean = [clean_cell(cell) for cell in data[i+1]]
                 if all_row_clean and all_row_clean[0].lower() == "all":
-                    # Ensure header and row have the same length
                     col_count = max(len(row_clean), len(all_row_clean))
                     header = row_clean[:col_count] + ['']*(col_count-len(row_clean))
                     data_row = all_row_clean[:col_count] + ['']*(col_count-len(all_row_clean))
-                    df = pd.DataFrame([data_row], columns=header)
-                    return df
+                    pairs.append((header, data_row))
+    if pairs:
+        header, data_row = pairs[-1]  # Use the LAST one!
+        df = pd.DataFrame([data_row], columns=header)
+        return df
     return pd.DataFrame()
 
 def nilambur_bypoll_dashboard(gc):
@@ -377,7 +379,6 @@ def nilambur_bypoll_dashboard(gc):
         summary_selected = st.selectbox("Choose Summary Type", summary_options)
         allowed_block_labels = summary_label_map.get(summary_selected, [])
 
-        # Use robust extraction for all Nilambur Overall Summary
         if summary_selected == "Overall Summary":
             df = extract_nilambur_overall_summary_block(data)
             if df.empty:
@@ -412,7 +413,6 @@ def nilambur_bypoll_dashboard(gc):
     except Exception as e:
         st.error(f"Could not load Nilambur Bypoll Survey: {e}")
 
-# ... rest of the dashboard code (dashboard_geo_section, comparative_dashboard, individual_dashboard, main_dashboard) unchanged ...
 def dashboard_geo_section(blocks, block_prefix, pivot_data, geo_name):
     geo_blocks = [b for b in blocks if b["label"].lower().startswith(block_prefix.lower())]
     if not geo_blocks:
