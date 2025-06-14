@@ -2,9 +2,12 @@ import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
+from io import BytesIO
+from fpdf import FPDF
 import os
 import json
 import tempfile
+import plotly.graph_objects as go
 import plotly.express as px
 import base64
 import re
@@ -153,7 +156,32 @@ def load_pivot_data(_gc, sheet_name, worksheet_name):
     data = ws.get_all_values()
     return data
 
-def find_cuts_and_blocks(data, allowed_blocks=None):
+# ----------- NILAMBUR BYPOLL DASHBOARD SECTION -----------
+
+def extract_overall_summary_from_nilambur_tab(data):
+    """Extract the first 'State Summary' block (header + first data row) from Nilambur pivot tabs."""
+    def clean(s):
+        if not isinstance(s, str): return s
+        return re.sub(r'[\u200B-\u200F\u202A-\u202E\u2060-\u206F]', '', s).strip().lower()
+    for i, row in enumerate(data):
+        if row and clean(row[0]) == "state summary":
+            header = data[i+1] if i+1 < len(data) else []
+            row_all = data[i+2] if i+2 < len(data) else []
+            if row_all and clean(row_all[0]) == "all":
+                col_count = max(len(header), len(row_all))
+                header = [h if h else f"Column_{j}" for j, h in enumerate(header[:col_count])]
+                row_all = row_all[:col_count] + ['']*(col_count-len(row_all))
+                return pd.DataFrame([row_all], columns=header)
+            if row_all == [] or all(cell == '' for cell in row_all):
+                row_all2 = data[i+3] if i+3 < len(data) else []
+                if row_all2 and clean(row_all2[0]) == "all":
+                    col_count = max(len(header), len(row_all2))
+                    header = [h if h else f"Column_{j}" for j, h in enumerate(header[:col_count])]
+                    row_all2 = row_all2[:col_count] + ['']*(col_count-len(row_all2))
+                    return pd.DataFrame([row_all2], columns=header)
+    return pd.DataFrame()
+
+def find_cuts_and_blocks_nilambur(data, allowed_blocks=None):
     blocks = []
     for i, row in enumerate(data):
         col1 = row[0] if len(row) > 0 else ""
@@ -196,7 +224,7 @@ def find_cuts_and_blocks(data, allowed_blocks=None):
         blocks = [b for b in blocks if b["label"].lower() in allowed or any(lbl in b["label"].lower() for lbl in allowed)]
     return blocks
 
-def extract_block_df(data, block):
+def extract_block_df_nilambur(data, block):
     try:
         header = data[block["header"]]
         rows = data[block["data_start"]:block["data_end"]]
@@ -215,102 +243,6 @@ def extract_block_df(data, block):
     except Exception as err:
         st.warning(f"Could not parse block as table: {err}")
         return pd.DataFrame()
-
-def show_centered_dataframe(df, height=400):
-    html = '<div style="overflow-x:auto">'
-    html += '<style>th, td { text-align:center !important; }</style>'
-    html += '<table style="margin-left:auto;margin-right:auto;border-collapse:collapse;width:100%;">'
-    html += '<thead><tr>'
-    html += f'<th style="border:1px solid #ddd;background:#f5f7fa;"></th>'
-    for col in df.columns:
-        html += f'<th style="border:1px solid #ddd;background:#f5f7fa;">{col}</th>'
-    html += '</tr></thead><tbody>'
-    for idx, row in df.iterrows():
-        html += '<tr>'
-        html += f'<td style="border:1px solid #ddd;background:#f5f7fa;">{idx}</td>'
-        for cell in row:
-            html += f'<td style="border:1px solid #ddd;">{cell if pd.notna(cell) else ""}</td>'
-        html += '</tr>'
-    html += '</tbody></table></div>'
-    st.markdown(html, unsafe_allow_html=True)
-
-def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
-    label_col = df.columns[0]
-    df = df[~df[label_col].astype(str).str.lower().str.contains('difference')]
-    exclude_keywords = ['sample', 'total', 'grand']
-    value_cols = [col for col in df.columns[1:] if not any(k in col.strip().lower() for k in exclude_keywords)]
-    if colorway == "plotly":
-        colors = px.colors.qualitative.Plotly
-    else:
-        colors = [
-            "#1976d2", "#fdbb2d", "#22356f", "#7b1fa2", "#0288d1", "#c2185b",
-            "#ffb300", "#388e3c", "#8d6e63"
-        ]
-    n_bars = df.shape[0] if len(value_cols) == 1 else len(value_cols)
-    colors = colors * ((n_bars // len(colors)) + 1)
-    for col in value_cols:
-        try:
-            df[col] = df[col].astype(str).str.replace('%', '', regex=False).astype(float)
-        except Exception:
-            continue
-    if not value_cols:
-        st.warning("No suitable value columns to plot.")
-        return
-    if len(value_cols) == 1:
-        value_col = value_cols[0]
-        fig = px.bar(
-            df, y=label_col, x=value_col, orientation='h', text=value_col,
-            color=label_col,
-            color_discrete_sequence=colors
-        )
-        fig.update_layout(
-            title=f"Distribution by {label_col}",
-            xaxis_title=value_col, yaxis_title=label_col,
-            showlegend=False, bargap=0.2,
-            plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa"
-        )
-        fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
-    else:
-        long_df = df.melt(id_vars=label_col, value_vars=value_cols, var_name='Category', value_name='Value')
-        fig = px.bar(
-            long_df, y=label_col, x='Value', color='Category',
-            orientation='h', barmode='group', text='Value',
-            color_discrete_sequence=colors
-        )
-        fig.update_layout(
-            title=f"Distribution by {label_col}",
-            xaxis_title='Value', yaxis_title=label_col,
-            bargap=0.2, legend_title="Category",
-            plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa"
-        )
-        fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
-    st.plotly_chart(fig, use_container_width=True, key=key)
-
-def extract_overall_summary_from_nilambur_tab(data):
-    """Extract the first 'State Summary' block (header + first data row) from Nilambur pivot tabs."""
-    def clean(s):
-        if not isinstance(s, str): return s
-        return re.sub(r'[\u200B-\u200F\u202A-\u202E\u2060-\u206F]', '', s).strip().lower()
-    for i, row in enumerate(data):
-        if row and clean(row[0]) == "state summary":
-            # header is next row, "All" is next or next-next row (skip blanks)
-            header = data[i+1] if i+1 < len(data) else []
-            # Look for "All" row immediately after header, or after blank
-            row_all = data[i+2] if i+2 < len(data) else []
-            if row_all and clean(row_all[0]) == "all":
-                col_count = max(len(header), len(row_all))
-                header = [h if h else f"Column_{j}" for j, h in enumerate(header[:col_count])]
-                row_all = row_all[:col_count] + ['']*(col_count-len(row_all))
-                return pd.DataFrame([row_all], columns=header)
-            # If row_all is blank, skip to i+3
-            if row_all == [] or all(cell == '' for cell in row_all):
-                row_all2 = data[i+3] if i+3 < len(data) else []
-                if row_all2 and clean(row_all2[0]) == "all":
-                    col_count = max(len(header), len(row_all2))
-                    header = [h if h else f"Column_{j}" for j, h in enumerate(header[:col_count])]
-                    row_all2 = row_all2[:col_count] + ['']*(col_count-len(row_all2))
-                    return pd.DataFrame([row_all2], columns=header)
-    return pd.DataFrame()
 
 def nilambur_bypoll_dashboard(gc):
     st.markdown('<div class="section-header">Nilambur Bypoll Survey</div>', unsafe_allow_html=True)
@@ -338,12 +270,6 @@ def nilambur_bypoll_dashboard(gc):
         norm_option = st.selectbox("Select Normalisation", norms_for_question)
         tab_for_selection = next(tab for norm, tab in question_map[selected_question] if norm == norm_option)
         data = load_pivot_data(gc, SHEET_NAME, tab_for_selection)
-
-        # === DEBUG: Print the raw data from the sheet for diagnosis ===
-        st.markdown(f"<b>DEBUG: Raw data for tab <code>{tab_for_selection}</code></b>", unsafe_allow_html=True)
-        for i, row in enumerate(data):
-            st.write(f"{i}: {row}")
-
         summary_options = ["Overall Summary", "Religion Summary", "Gender Summary", "Age Summary", "Community Summary"]
         summary_label_map = {
             "Overall Summary": ["overall summary", "state summary", "all"],
@@ -365,12 +291,12 @@ def nilambur_bypoll_dashboard(gc):
             st.markdown('</div>', unsafe_allow_html=True)
             plot_horizontal_bar_plotly(df, key=f"nilambur_{display_label}_norm_plot", colorway="plotly")
             return
-        blocks = find_cuts_and_blocks(data, allowed_blocks=allowed_block_labels)
+        blocks = find_cuts_and_blocks_nilambur(data, allowed_blocks=allowed_block_labels)
         if not blocks:
             st.warning("No data block found for summary type in this tab.")
             return
         block = blocks[0]
-        df = extract_block_df(data, block)
+        df = extract_block_df_nilambur(data, block)
         if df.empty:
             st.warning("No data table found for this summary.")
             return
@@ -386,7 +312,10 @@ def nilambur_bypoll_dashboard(gc):
     except Exception as e:
         st.error(f"Could not load Nilambur Bypoll Survey: {e}")
 
-# ... rest of your dashboard (comparative_dashboard, individual_dashboard, etc.) unchanged ...
+# ----------- INDIVIDUAL AND COMPARATIVE DASHBOARD SECTION -----------
+
+# ... [Insert the rest of your "Individual" and "Comparative" dashboard code unchanged from your lower script] ...
+# ... For brevity, you can use the lower script's individual_dashboard and comparative_dashboard as is! ...
 
 def main_dashboard(gc):
     inject_custom_css()
