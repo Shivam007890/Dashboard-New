@@ -2,12 +2,9 @@ import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
-from io import BytesIO
-from fpdf import FPDF
 import os
 import json
 import tempfile
-import plotly.graph_objects as go
 import plotly.express as px
 import base64
 
@@ -220,7 +217,6 @@ def extract_block_df(data, block):
         return pd.DataFrame()
 
 def show_centered_dataframe(df, height=400):
-    # Renders a simple, centered HTML table
     html = '<div style="overflow-x:auto">'
     html += '<style>th, td { text-align:center !important; }</style>'
     html += '<table style="margin-left:auto;margin-right:auto;border-collapse:collapse;width:100%;">'
@@ -293,42 +289,38 @@ def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
 def nilambur_bypoll_dashboard(gc):
     st.markdown('<div class="section-header">Nilambur Bypoll Survey</div>', unsafe_allow_html=True)
     try:
+        # List all Nilambur tabs in the spreadsheet
         all_ws = gc.open(SHEET_NAME).worksheets()
-        nilambur_sheets = [ws.title for ws in all_ws if "nilambur" in ws.title.lower()]
-        nilambur_options = [
-            "Nilambur - Who will you vote for",
-            "Nilambur - Who will win Nilambur AC"
-        ]
-        tab_map = {
-            opt: next((s for s in nilambur_sheets if opt.lower() in s.lower()), None)
-            for opt in nilambur_options
-        }
-        selected_tab_label = st.selectbox("Select Nilambur Bypoll Survey Question", nilambur_options)
-        worksheet_name = tab_map[selected_tab_label]
-        if not worksheet_name:
-            st.warning(f"Worksheet/tab not found for {selected_tab_label}.")
+        nilambur_tabs = [ws.title for ws in all_ws if ws.title.lower().startswith("nilambur - ")]
+        # Find all unique questions (normalize to just question + normalisation)
+        question_norm_tabs = []
+        for t in nilambur_tabs:
+            parts = t.split(" - ")
+            if len(parts) >= 3:
+                question = parts[1].strip()
+                norm = parts[2].strip()
+                question_norm_tabs.append((question, norm, t))
+        # Organize mapping: question -> [norms]
+        question_map = {}
+        for question, norm, tab in question_norm_tabs:
+            if question not in question_map:
+                question_map[question] = []
+            question_map[question].append((norm, tab))
+        # Question selector
+        question_options = list(question_map.keys())
+        if not question_options:
+            st.warning("No Nilambur Bypoll Survey tabs found in this workbook.")
             return
-
-        # Choose normalisation just below the question
-        norm_options = [
-            "Religion Normalisation",
-            "Caste Normalisation",
-            "Category Normalisation"
-        ]
-        # Try to find which are present in the worksheet
-        data = load_pivot_data(gc, SHEET_NAME, worksheet_name)
-        header_row = data[0] if data else []
-        present_norms = [n for n in norm_options if any(n.lower() in h.lower() for h in header_row)]
-        if not present_norms:
-            st.warning("No normalisation columns present in this worksheet.")
-            return
-        norm_selected = st.selectbox("Choose Normalisation", present_norms)
-
-        # Show summary level dropdown
+        selected_question = st.selectbox("Select Nilambur Question", question_options)
+        # Norm selector below question
+        norms_for_question = [norm for norm, tab in question_map[selected_question]]
+        norm_option = st.selectbox("Select Normalisation", norms_for_question)
+        # Find the tab for this question + norm
+        tab_for_selection = next(tab for norm, tab in question_map[selected_question] if norm == norm_option)
+        # Load data
+        data = load_pivot_data(gc, SHEET_NAME, tab_for_selection)
+        # Only allow Overall, Religion, Gender, Age, Community summaries
         summary_options = ["Overall Summary", "Religion Summary", "Gender Summary", "Age Summary", "Community Summary"]
-        summary_selected = st.selectbox("Choose Summary Type", summary_options)
-
-        # Map summary selection to block label (case-insensitive)
         summary_label_map = {
             "Overall Summary": ["overall summary", "state summary", "all"],
             "Religion Summary": ["religion summary", "state + religion summary", "religion"],
@@ -336,36 +328,23 @@ def nilambur_bypoll_dashboard(gc):
             "Age Summary": ["age summary", "state + age summary", "age"],
             "Community Summary": ["community summary", "state + community summary", "community"]
         }
+        summary_selected = st.selectbox("Choose Summary Type", summary_options)
         allowed_block_labels = summary_label_map.get(summary_selected, [])
-
-        # Only keep blocks that match the drop-down summary
         blocks = find_cuts_and_blocks(data, allowed_blocks=allowed_block_labels)
         if not blocks:
-            st.warning("No matching data block found for selected summary.")
+            st.warning("No data block found for summary type in this tab.")
             return
-
-        # Find the normalised column for this worksheet
-        norm_col_name = next((h for h in header_row if norm_selected.lower() in h.lower()), None)
-        if not norm_col_name:
-            st.warning("Normalisation column not found in worksheet.")
-            return
-
-        # Extract and display the matching block
         block = blocks[0]
         df = extract_block_df(data, block)
         if df.empty:
-            st.warning(f"No data table found for {block['label']}.")
+            st.warning("No data table found for this summary.")
             return
-
-        st.markdown(f'<div class="center-table"><h4 style="text-align:center">{block["label"]} ({norm_selected})</h4>', unsafe_allow_html=True)
+        st.markdown(f'<div class="center-table"><h4 style="text-align:center">{block["label"]} ({norm_option})</h4>', unsafe_allow_html=True)
         show_centered_dataframe(df)
         st.markdown('</div>', unsafe_allow_html=True)
         plot_horizontal_bar_plotly(df, key=f"nilambur_{block['label']}_norm_plot", colorway="plotly")
-
     except Exception as e:
-        st.error(f"Could not load Nilambur Bypoll Survey or Normalisation: {e}")
-
-# --- MAIN DASHBOARD ---
+        st.error(f"Could not load Nilambur Bypoll Survey: {e}")
 
 def main_dashboard(gc):
     inject_custom_css()
@@ -397,7 +376,7 @@ def main_dashboard(gc):
     elif choice == "Nilambur Bypoll Survey":
         nilambur_bypoll_dashboard(gc)
 
-# ... rest of your code for comparative_dashboard and individual_dashboard unchanged ...
+# ... (comparative_dashboard, individual_dashboard and other helpers as previously defined) ...
 
 if __name__ == "__main__":
     st.set_page_config(page_title="Kerala Survey Dashboard", layout="wide")
