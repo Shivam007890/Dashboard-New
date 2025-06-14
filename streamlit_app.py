@@ -2,9 +2,12 @@ import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
+from io import BytesIO
+from fpdf import FPDF
 import os
 import json
 import tempfile
+import plotly.graph_objects as go
 import plotly.express as px
 import base64
 
@@ -183,7 +186,7 @@ def find_cuts_and_blocks(data, allowed_blocks=None):
                 while j < len(data) and any(str(cell).strip() for cell in data[j]):
                     j += 1
                 blocks.append({
-                    "label": "Overall Summary",
+                    "label": "Comparative Results",
                     "start": i-1 if i > 0 else 0,
                     "header": i,
                     "data_start": i+1,
@@ -285,72 +288,66 @@ def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
         fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     st.plotly_chart(fig, use_container_width=True, key=key)
 
-def nilambur_bypoll_dashboard(gc):
-    st.markdown('<div class="section-header">Nilambur Bypoll Survey</div>', unsafe_allow_html=True)
+def individual_dashboard(gc):
+    st.markdown('<div class="section-header">Individual Survey Reports</div>', unsafe_allow_html=True)
     try:
-        # List all Nilambur tabs in the spreadsheet
         all_ws = gc.open(SHEET_NAME).worksheets()
-        nilambur_tabs = [ws.title for ws in all_ws if ws.title.lower().startswith("nilambur - ")]
-        # Find all unique questions (normalize to just question + normalisation)
-        question_norm_tabs = []
-        for t in nilambur_tabs:
-            parts = t.split(" - ")
-            if len(parts) >= 3:
-                question = parts[1].strip()
-                norm = parts[2].strip()
-                question_norm_tabs.append((question, norm, t))
-        # Organize mapping: question -> [norms]
-        question_map = {}
-        for question, norm, tab in question_norm_tabs:
-            if question not in question_map:
-                question_map[question] = []
-            question_map[question].append((norm, tab))
-        # Question selector
-        question_options = list(question_map.keys())
-        if not question_options:
-            st.warning("No Nilambur Bypoll Survey tabs found in this workbook.")
+        sheet_titles = [ws.title for ws in all_ws]
+
+        # Extract unique months and question titles from the format "Month - Question"
+        month_question_pairs = []
+        month_set = set()
+        for title in sheet_titles:
+            parts = title.split(" - ", 1)
+            if len(parts) == 2:
+                month, question = parts
+                month = month.strip()
+                question = question.strip()
+                month_question_pairs.append((month, question, title))
+                month_set.add(month)
+        if not month_set:
+            st.warning("No monthly question sheets (format: 'Month - Question') found.")
             return
-        selected_question = st.selectbox("Select Nilambur Question", question_options)
-        # Norm selector below question (now includes VN GE Normalization)
-        norms_for_question = [norm for norm, tab in question_map[selected_question]]
-        norm_option = st.selectbox("Select Normalisation", norms_for_question)
-        # Find the tab for this question + norm
-        tab_for_selection = next(tab for norm, tab in question_map[selected_question] if norm == norm_option)
-        # Load data
-        data = load_pivot_data(gc, SHEET_NAME, tab_for_selection)
-        # Allow Overall, Religion, Gender, Age, Community summaries
-        summary_options = ["Overall Summary", "Religion Summary", "Gender Summary", "Age Summary", "Community Summary"]
-        summary_label_map = {
-            "Overall Summary": ["overall summary", "state summary", "all"],
-            "Religion Summary": ["religion summary", "state + religion summary", "religion"],
-            "Gender Summary": ["gender summary", "state + gender summary", "gender"],
-            "Age Summary": ["age summary", "state + age summary", "age"],
-            "Community Summary": ["community summary", "state + community summary", "community"]
-        }
-        summary_selected = st.selectbox("Choose Summary Type", summary_options)
-        allowed_block_labels = summary_label_map.get(summary_selected, [])
-        blocks = find_cuts_and_blocks(data, allowed_blocks=allowed_block_labels)
+
+        # Sort months in calendar order if possible
+        months = sorted(
+            month_set,
+            key=lambda m: (
+                ["january","february","march","april","may","june","july","august","september","october","november","december"].index(m.lower())
+                if m.lower() in ["january","february","march","april","may","june","july","august","september","october","november","december"] else 99, m
+            ),
+        )
+        selected_month = st.selectbox("Select Month", months)
+
+        # For the selected month, list all questions/sheets matching this month prefix
+        questions_for_month = [(question, title) for (month, question, title) in month_question_pairs if month == selected_month]
+        if not questions_for_month:
+            st.warning(f"No questions found for month '{selected_month}'.")
+            return
+
+        question_labels = [q for (q, t) in questions_for_month]
+        question_to_sheet = {q: t for (q, t) in questions_for_month}
+        selected_question = st.selectbox("Select Question", question_labels)
+
+        selected_sheet = question_to_sheet[selected_question]
+        data = load_pivot_data(gc, SHEET_NAME, selected_sheet)
+        blocks = find_cuts_and_blocks(data)
         if not blocks:
-            st.warning("No data block found for summary type in this tab.")
+            st.warning("No data blocks found in this sheet.")
             return
-        block = blocks[0]
+        block_labels = [b["label"] for b in blocks]
+        selected_block_label = st.selectbox("Select Summary/Block", block_labels)
+        block = next(b for b in blocks if b["label"] == selected_block_label)
         df = extract_block_df(data, block)
         if df.empty:
-            st.warning("No data table found for this summary.")
+            st.warning("No data table found for this block.")
             return
-        display_label = block["label"]
-        if summary_selected == "Overall Summary":
-            display_label = "Overall Summary"
-        else:
-            for s in ["state + ", "state+", "state "]:
-                if display_label.lower().startswith(s):
-                    display_label = display_label[len(s):].lstrip()
-        st.markdown(f'<div class="center-table"><h4 style="text-align:center">{display_label} ({norm_option})</h4>', unsafe_allow_html=True)
+        st.markdown(f'<div class="center-table"><h4 style="text-align:center">{block["label"]}</h4>', unsafe_allow_html=True)
         show_centered_dataframe(df)
         st.markdown('</div>', unsafe_allow_html=True)
-        plot_horizontal_bar_plotly(df, key=f"nilambur_{block['label']}_norm_plot", colorway="plotly")
+        plot_horizontal_bar_plotly(df, key=f"individual_{block['label']}_plot", colorway="plotly")
     except Exception as e:
-        st.error(f"Could not load Nilambur Bypoll Survey: {e}")
+        st.error(f"Could not load individual survey report: {e}")
 
 def comparative_dashboard(gc):
     st.markdown('<div class="section-header">Comparative Analysis (Overall Only)</div>', unsafe_allow_html=True)
@@ -378,34 +375,6 @@ def comparative_dashboard(gc):
     except Exception as e:
         st.error(f"Could not load comparative analysis: {e}")
 
-def individual_dashboard(gc):
-    st.markdown('<div class="section-header">Individual Survey Reports</div>', unsafe_allow_html=True)
-    try:
-        all_ws = gc.open(SHEET_NAME).worksheets()
-        question_sheets = [ws.title for ws in all_ws if not ws.title.lower().startswith("comp_") and not ws.title.lower().startswith("comparative analysis") and not ws.title.lower().startswith("nilambur")]
-        if not question_sheets:
-            st.warning("No question sheets found.")
-            return
-        selected_sheet = st.selectbox("Select Individual Survey Sheet", question_sheets)
-        data = load_pivot_data(gc, SHEET_NAME, selected_sheet)
-        blocks = find_cuts_and_blocks(data)
-        if not blocks:
-            st.warning("No data blocks found in this sheet.")
-            return
-        block_labels = [b["label"] for b in blocks]
-        selected_block_label = st.selectbox("Select Summary/Block", block_labels)
-        block = next(b for b in blocks if b["label"] == selected_block_label)
-        df = extract_block_df(data, block)
-        if df.empty:
-            st.warning("No data table found for this block.")
-            return
-        st.markdown(f'<div class="center-table"><h4 style="text-align:center">{block["label"]}</h4>', unsafe_allow_html=True)
-        show_centered_dataframe(df)
-        st.markdown('</div>', unsafe_allow_html=True)
-        plot_horizontal_bar_plotly(df, key=f"individual_{block['label']}_plot", colorway="plotly")
-    except Exception as e:
-        st.error(f"Could not load individual survey report: {e}")
-
 def main_dashboard(gc):
     inject_custom_css()
     st.markdown("<h1 class='dashboard-title'>Kerala Survey Dashboard</h1>", unsafe_allow_html=True)
@@ -425,16 +394,13 @@ def main_dashboard(gc):
         "",
         [
             "Periodic Popularity Poll Ticker",
-            "Individual Survey Reports",
-            "Nilambur Bypoll Survey"
+            "Individual Survey Reports"
         ]
     )
     if choice == "Periodic Popularity Poll Ticker":
         comparative_dashboard(gc)
     elif choice == "Individual Survey Reports":
         individual_dashboard(gc)
-    elif choice == "Nilambur Bypoll Survey":
-        nilambur_bypoll_dashboard(gc)
 
 if __name__ == "__main__":
     st.set_page_config(page_title="Kerala Survey Dashboard", layout="wide")
