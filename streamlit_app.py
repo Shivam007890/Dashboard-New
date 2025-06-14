@@ -8,6 +8,7 @@ import tempfile
 import plotly.express as px
 import base64
 import numpy as np
+import re
 
 SHEET_NAME = "Kerala Weekly Survey Automation Dashboard Test Run"
 
@@ -314,6 +315,28 @@ def plot_horizontal_bar_plotly(df, key=None, colorway="plotly", tab_name=None):
     fig.update_traces(texttemplate='%{text:.2f}', textposition='outside')
     st.plotly_chart(fig, use_container_width=True, key=key)
 
+def extract_nilambur_overall_summary(data):
+    def clean(s):
+        if not isinstance(s, str):
+            return s
+        return re.sub(r'[\u200B-\u200F\u202A-\u202E\u2060-\u206F]', '', s).strip()
+    for i, row in enumerate(data):
+        row_clean = [clean(cell) for cell in row]
+        if (
+            len(row_clean) >= 7
+            and row_clean[0].lower() == "state"
+            and "ldf" in row_clean[1].lower()
+            and "udf" in row_clean[2].lower()
+            and "bjp" in row_clean[3].lower()
+        ):
+            header = row_clean
+            if i + 1 < len(data):
+                all_row_clean = [clean(cell) for cell in data[i+1]]
+                if all_row_clean[0].lower() == "all":
+                    df = pd.DataFrame([all_row_clean], columns=header)
+                    return df
+    return pd.DataFrame()
+
 def nilambur_bypoll_dashboard(gc):
     st.markdown('<div class="section-header">Nilambur Bypoll Survey</div>', unsafe_allow_html=True)
     try:
@@ -341,7 +364,6 @@ def nilambur_bypoll_dashboard(gc):
         tab_for_selection = next(tab for norm, tab in question_map[selected_question] if norm == norm_option)
         data = load_pivot_data(gc, SHEET_NAME, tab_for_selection)
 
-        # DEBUG: Show all rows read from the Nilambur worksheet for troubleshooting
         st.write("DEBUG: Showing all rows in this Nilambur tab. Use this to verify header/All row positions.")
         for i, row in enumerate(data):
             st.write(f"{i}: {row}")
@@ -356,23 +378,6 @@ def nilambur_bypoll_dashboard(gc):
         }
         summary_selected = st.selectbox("Choose Summary Type", summary_options)
         allowed_block_labels = summary_label_map.get(summary_selected, [])
-
-        # Custom: Use bulletproof extraction for Overall Summary
-        def extract_nilambur_overall_summary(data):
-            for i, row in enumerate(data):
-                if (
-                    len(row) >= 7
-                    and row[0].strip().lower() == "state"
-                    and "ldf" in row[1].lower()
-                    and "udf" in row[2].lower()
-                    and "bjp" in row[3].lower()
-                ):
-                    header = [c.strip() for c in row]
-                    if i + 1 < len(data) and data[i+1][0].strip().lower() == "all":
-                        all_row = [c.strip() for c in data[i+1]]
-                        df = pd.DataFrame([all_row], columns=header)
-                        return df
-            return pd.DataFrame()
 
         if summary_selected == "Overall Summary":
             df = extract_nilambur_overall_summary(data)
@@ -411,10 +416,8 @@ def nilambur_bypoll_dashboard(gc):
     except Exception as e:
         st.error(f"Could not load Nilambur Bypoll Survey: {e}")
 
-# ... (rest of your dashboard code remains unchanged, e.g., dashboard_geo_section, comparative_dashboard, individual_dashboard, main_dashboard, etc.) ...
-# For brevity, you can copy-paste those from your previous script, as only nilambur_bypoll_dashboard is changed for bulletproof Nilambur extraction.
-
-# rest of your script (dashboard_geo_section, comparative_dashboard, individual_dashboard, main_dashboard, etc.) stays the same as before
+# ... the rest of your dashboard functions (dashboard_geo_section, comparative_dashboard, individual_dashboard, main_dashboard) remain unchanged ...
+# You can copy them from your previous version.
 
 def dashboard_geo_section(blocks, block_prefix, pivot_data, geo_name):
     geo_blocks = [b for b in blocks if b["label"].lower().startswith(block_prefix.lower())]
