@@ -245,7 +245,6 @@ def show_centered_dataframe(df, height=400):
 
 def plot_horizontal_bar_plotly(df, key=None, colorway="plotly", tab_name=None):
     import numpy as np
-    # For Overall Summary, Option/Value format for plotting only, not for table display!
     if "Option" in df.columns and "Value" in df.columns and df.shape[0] > 0:
         df_plot = df.copy()
         df_plot['Value'] = df_plot['Value'].astype(str).str.replace('%','').str.replace(',','').str.replace('−','-').str.replace('–','-').astype(float)
@@ -341,6 +340,12 @@ def nilambur_bypoll_dashboard(gc):
         norm_option = st.selectbox("Select Normalisation", norms_for_question)
         tab_for_selection = next(tab for norm, tab in question_map[selected_question] if norm == norm_option)
         data = load_pivot_data(gc, SHEET_NAME, tab_for_selection)
+
+        # DEBUG: Show all rows read from the Nilambur worksheet for troubleshooting
+        st.write("DEBUG: Showing all rows in this Nilambur tab. Use this to verify header/All row positions.")
+        for i, row in enumerate(data):
+            st.write(f"{i}: {row}")
+
         summary_options = ["Overall Summary", "Religion Summary", "Gender Summary", "Age Summary", "Community Summary"]
         summary_label_map = {
             "Overall Summary": ["overall summary", "state summary", "all"],
@@ -362,7 +367,8 @@ def nilambur_bypoll_dashboard(gc):
             return
         display_label = summary_selected
         st.markdown(f'<div class="center-table"><h4 style="text-align:center">{display_label} ({norm_option})</h4>', unsafe_allow_html=True)
-        show_centered_dataframe(df)
+        st.write("DEBUG: DataFrame extracted for display below:")
+        st.dataframe(df)
         st.markdown('</div>', unsafe_allow_html=True)
         # For plotting: if Overall Summary and only one row, plot Option/Value, else plot as group
         if (
@@ -382,6 +388,8 @@ def nilambur_bypoll_dashboard(gc):
             plot_horizontal_bar_plotly(df, key=f"nilambur_{display_label}_norm_plot", colorway="plotly", tab_name=tab_for_selection)
     except Exception as e:
         st.error(f"Could not load Nilambur Bypoll Survey: {e}")
+
+# ... (rest of your dashboard code remains unchanged) ...
 
 def dashboard_geo_section(blocks, block_prefix, pivot_data, geo_name):
     geo_blocks = [b for b in blocks if b["label"].lower().startswith(block_prefix.lower())]
