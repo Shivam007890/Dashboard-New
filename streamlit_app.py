@@ -156,10 +156,27 @@ def load_pivot_data(_gc, sheet_name, worksheet_name):
     data = ws.get_all_values()
     return data
 
-# ----------- NILAMBUR BYPOLL DASHBOARD SECTION -----------
+def show_centered_dataframe(df, height=400):
+    html = '<div style="overflow-x:auto">'
+    html += '<style>th, td { text-align:center !important; }</style>'
+    html += '<table style="margin-left:auto;margin-right:auto;border-collapse:collapse;width:100%;">'
+    html += '<thead><tr>'
+    html += f'<th style="border:1px solid #ddd;background:#f5f7fa;"></th>'
+    for col in df.columns:
+        html += f'<th style="border:1px solid #ddd;background:#f5f7fa;">{col}</th>'
+    html += '</tr></thead><tbody>'
+    for idx, row in df.iterrows():
+        html += '<tr>'
+        html += f'<td style="border:1px solid #ddd;background:#f5f7fa;">{idx}</td>'
+        for cell in row:
+            html += f'<td style="border:1px solid #ddd;">{cell if pd.notna(cell) else ""}</td>'
+        html += '</tr>'
+    html += '</tbody></table></div>'
+    st.markdown(html, unsafe_allow_html=True)
+
+# ========== NILAMBUR BYPOLL DASHBOARD ==========
 
 def extract_overall_summary_from_nilambur_tab(data):
-    """Extract the first 'State Summary' block (header + first data row) from Nilambur pivot tabs."""
     def clean(s):
         if not isinstance(s, str): return s
         return re.sub(r'[\u200B-\u200F\u202A-\u202E\u2060-\u206F]', '', s).strip().lower()
@@ -244,6 +261,58 @@ def extract_block_df_nilambur(data, block):
         st.warning(f"Could not parse block as table: {err}")
         return pd.DataFrame()
 
+def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
+    label_col = df.columns[0]
+    df = df[~df[label_col].astype(str).str.lower().str.contains('difference')]
+    exclude_keywords = ['sample', 'total', 'grand']
+    value_cols = [col for col in df.columns[1:] if not any(k in col.strip().lower() for k in exclude_keywords)]
+    if colorway == "plotly":
+        colors = px.colors.qualitative.Plotly
+    else:
+        colors = [
+            "#1976d2", "#fdbb2d", "#22356f", "#7b1fa2", "#0288d1", "#c2185b",
+            "#ffb300", "#388e3c", "#8d6e63"
+        ]
+    n_bars = df.shape[0] if len(value_cols) == 1 else len(value_cols)
+    colors = colors * ((n_bars // len(colors)) + 1)
+    for col in value_cols:
+        try:
+            df[col] = df[col].astype(str).str.replace('%', '', regex=False).astype(float)
+        except Exception:
+            continue
+    if not value_cols:
+        st.warning("No suitable value columns to plot.")
+        return
+    if len(value_cols) == 1:
+        value_col = value_cols[0]
+        fig = px.bar(
+            df, y=label_col, x=value_col, orientation='h', text=value_col,
+            color=label_col,
+            color_discrete_sequence=colors
+        )
+        fig.update_layout(
+            title=f"Distribution by {label_col}",
+            xaxis_title=value_col, yaxis_title=label_col,
+            showlegend=False, bargap=0.2,
+            plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa"
+        )
+        fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
+    else:
+        long_df = df.melt(id_vars=label_col, value_vars=value_cols, var_name='Category', value_name='Value')
+        fig = px.bar(
+            long_df, y=label_col, x='Value', color='Category',
+            orientation='h', barmode='group', text='Value',
+            color_discrete_sequence=colors
+        )
+        fig.update_layout(
+            title=f"Distribution by {label_col}",
+            xaxis_title='Value', yaxis_title=label_col,
+            bargap=0.2, legend_title="Category",
+            plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa"
+        )
+        fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
+    st.plotly_chart(fig, use_container_width=True, key=key)
+
 def nilambur_bypoll_dashboard(gc):
     st.markdown('<div class="section-header">Nilambur Bypoll Survey</div>', unsafe_allow_html=True)
     try:
@@ -312,10 +381,15 @@ def nilambur_bypoll_dashboard(gc):
     except Exception as e:
         st.error(f"Could not load Nilambur Bypoll Survey: {e}")
 
-# ----------- INDIVIDUAL AND COMPARATIVE DASHBOARD SECTION -----------
+# ========== INDIVIDUAL AND COMPARATIVE DASHBOARD CODE ==========
 
-# ... [Insert the rest of your "Individual" and "Comparative" dashboard code unchanged from your lower script] ...
-# ... For brevity, you can use the lower script's individual_dashboard and comparative_dashboard as is! ...
+# ... [Paste your full "Individual Survey Reports" and "Periodic Popularity Poll Ticker" dashboard functions here, as from your working script] ...
+# ... For brevity, they are not repeated here, but you should use your tested working code for these dashboards! ...
+# ... Your previous functions: get_month_list, find_cuts_and_blocks, extract_block_df, dataframe_to_pdf, safe_float, plot_trend_ticker, etc. ...
+
+# (Paste all helper functions and dashboards as already provided in your second, working script.)
+
+# ========== MAIN DASHBOARD ==========
 
 def main_dashboard(gc):
     inject_custom_css()
