@@ -356,27 +356,35 @@ def nilambur_bypoll_dashboard(gc):
         }
         summary_selected = st.selectbox("Choose Summary Type", summary_options)
         allowed_block_labels = summary_label_map.get(summary_selected, [])
-        blocks = find_cuts_and_blocks(data, allowed_blocks=allowed_block_labels)
-        if not blocks:
-            st.warning("No data block found for summary type in this tab.")
-            return
-        block = blocks[0]
-        df = extract_block_df(data, block)
-        if df.empty:
-            st.warning("No data table found for this summary.")
-            return
-        display_label = summary_selected
-        st.markdown(f'<div class="center-table"><h4 style="text-align:center">{display_label} ({norm_option})</h4>', unsafe_allow_html=True)
-        st.write("DEBUG: DataFrame extracted for display below:")
-        st.dataframe(df)
-        st.markdown('</div>', unsafe_allow_html=True)
-        # For plotting: if Overall Summary and only one row, plot Option/Value, else plot as group
-        if (
-            summary_selected == "Overall Summary"
-            and df.shape[0] == 1
-            and "State" in df.columns
-            and str(df.iloc[0]["State"]).strip().lower() == "all"
-        ):
+
+        # Custom: Use bulletproof extraction for Overall Summary
+        def extract_nilambur_overall_summary(data):
+            for i, row in enumerate(data):
+                if (
+                    len(row) >= 7
+                    and row[0].strip().lower() == "state"
+                    and "ldf" in row[1].lower()
+                    and "udf" in row[2].lower()
+                    and "bjp" in row[3].lower()
+                ):
+                    header = [c.strip() for c in row]
+                    if i + 1 < len(data) and data[i+1][0].strip().lower() == "all":
+                        all_row = [c.strip() for c in data[i+1]]
+                        df = pd.DataFrame([all_row], columns=header)
+                        return df
+            return pd.DataFrame()
+
+        if summary_selected == "Overall Summary":
+            df = extract_nilambur_overall_summary(data)
+            if df.empty:
+                st.warning("Could not find the correct Nilambur Overall Summary block.")
+                return
+            display_label = summary_selected
+            st.markdown(f'<div class="center-table"><h4 style="text-align:center">{display_label} ({norm_option})</h4>', unsafe_allow_html=True)
+            st.write("DEBUG: DataFrame extracted for display below:")
+            st.dataframe(df)
+            st.markdown('</div>', unsafe_allow_html=True)
+            # Plot as Option/Value bar
             row = df.iloc[0]
             party_cols = [col for col in df.columns if col not in ("State", "Grand Total", "Sample Count") and col.strip()]
             df_plot = pd.DataFrame({
@@ -385,11 +393,28 @@ def nilambur_bypoll_dashboard(gc):
             })
             plot_horizontal_bar_plotly(df_plot, key=f"nilambur_{display_label}_norm_plot", colorway="plotly", tab_name=tab_for_selection)
         else:
+            blocks = find_cuts_and_blocks(data, allowed_blocks=allowed_block_labels)
+            if not blocks:
+                st.warning("No data block found for summary type in this tab.")
+                return
+            block = blocks[0]
+            df = extract_block_df(data, block)
+            if df.empty:
+                st.warning("No data table found for this summary.")
+                return
+            display_label = summary_selected
+            st.markdown(f'<div class="center-table"><h4 style="text-align:center">{display_label} ({norm_option})</h4>', unsafe_allow_html=True)
+            st.write("DEBUG: DataFrame extracted for display below:")
+            st.dataframe(df)
+            st.markdown('</div>', unsafe_allow_html=True)
             plot_horizontal_bar_plotly(df, key=f"nilambur_{display_label}_norm_plot", colorway="plotly", tab_name=tab_for_selection)
     except Exception as e:
         st.error(f"Could not load Nilambur Bypoll Survey: {e}")
 
-# ... (rest of your dashboard code remains unchanged) ...
+# ... (rest of your dashboard code remains unchanged, e.g., dashboard_geo_section, comparative_dashboard, individual_dashboard, main_dashboard, etc.) ...
+# For brevity, you can copy-paste those from your previous script, as only nilambur_bypoll_dashboard is changed for bulletproof Nilambur extraction.
+
+# rest of your script (dashboard_geo_section, comparative_dashboard, individual_dashboard, main_dashboard, etc.) stays the same as before
 
 def dashboard_geo_section(blocks, block_prefix, pivot_data, geo_name):
     geo_blocks = [b for b in blocks if b["label"].lower().startswith(block_prefix.lower())]
