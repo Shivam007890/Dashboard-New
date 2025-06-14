@@ -244,17 +244,19 @@ def show_centered_dataframe(df, height=400):
     st.markdown(html, unsafe_allow_html=True)
 
 def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
-    # If wide format (single row, many columns), transpose
+    # If wide format (single row, many columns), transpose and use only party columns
     if df.shape[0] == 1 and df.shape[1] > 2:
-        df = df.T.reset_index()
-        df.columns = ['Option', 'Value']
-        # Drop the header row and set Option/Value correctly
-        if df.iloc[0]["Option"].strip().lower() in ["option", "state"]:
-            df = df.iloc[1:].reset_index(drop=True)
-        # Remove rows that are not actual options
-        exclude = ['all', 'grand total', 'sample count', '', None, np.nan]
-        df = df[~df['Option'].str.strip().str.lower().isin(exclude)]
-        # Remove any rows where Value is not a number/percent
+        exclude_cols = ['state', 'grand total', 'sample count', '', None, np.nan]
+        # Only keep option columns for plotting
+        plot_cols = [col for col in df.columns if str(col).strip().lower() not in exclude_cols]
+        meta_cols = ['state', 'grand total', 'sample count']
+        options = [col for col in plot_cols if col.lower() not in meta_cols]
+        # Transpose, keeping only the option columns
+        df_plot = pd.DataFrame({
+            'Option': options,
+            'Value': [df.loc[0, col] for col in options]
+        })
+        # Filter out any non-numeric/percent values
         def is_percent_or_number(s):
             s = str(s).replace('%','').replace(',','').replace('−','-').replace('–','-')
             try:
@@ -262,11 +264,11 @@ def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
                 return True
             except Exception:
                 return False
-        df = df[df['Value'].apply(is_percent_or_number)]
-        # Convert Value to float
-        df['Value'] = df['Value'].astype(str).str.replace('%','').str.replace(',','').str.replace('−','-').str.replace('–','-').astype(float)
+        df_plot = df_plot[df_plot['Value'].apply(is_percent_or_number)]
+        df_plot['Value'] = df_plot['Value'].astype(str).str.replace('%','').str.replace(',','').str.replace('−','-').str.replace('–','-').astype(float)
         label_col = 'Option'
         value_cols = ['Value']
+        df = df_plot
     else:
         label_col = df.columns[0]
         # Filter out any summary or non-numeric rows
@@ -301,13 +303,16 @@ def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
             except Exception as e:
                 st.warning(f"Could not convert column {col} to float: {e}")
                 continue
+
     if not value_cols or df.empty:
         st.warning("No suitable value columns to plot.")
         st.write("Available columns:", list(df.columns))
         return
+
     colors = px.colors.qualitative.Plotly
     n_bars = df.shape[0] if len(value_cols) == 1 else len(value_cols)
     colors = colors * ((n_bars // len(colors)) + 1)
+
     if len(value_cols) == 1:
         value_col = value_cols[0]
         fig = px.bar(
