@@ -313,28 +313,32 @@ def plot_horizontal_bar_plotly(df, key=None, colorway="plotly", tab_name=None):
     fig.update_traces(texttemplate='%{text:.2f}', textposition='outside')
     st.plotly_chart(fig, use_container_width=True, key=key)
 
-def clean_cell(s):
-    """Remove all zero-width and control unicode chars and strip whitespace."""
-    if not isinstance(s, str):
-        return s
-    return re.sub(r'[\u200B-\u200F\u202A-\u202E\u2060-\u206F]', '', s).strip()
-
-def extract_nilambur_overall_summary_block(data):
-    pairs = []
+def extract_overall_summary_by_block_label(data):
+    """
+    Finds the first block whose label is 'State Summary' (case-insensitive, stripped of whitespace/unicode),
+    then fetches the header (next row) and first data row (next row after header).
+    Returns a dataframe with the header and data.
+    """
+    def clean(s):
+        if not isinstance(s, str):
+            return s
+        return re.sub(r'[\u200B-\u200F\u202A-\u202E\u2060-\u206F]', '', s).strip().lower()
     for i, row in enumerate(data):
-        row_clean = [clean_cell(cell) for cell in row]
-        if row_clean and row_clean[0].lower() == "state":
-            if i+1 < len(data):
-                all_row_clean = [clean_cell(cell) for cell in data[i+1]]
-                if all_row_clean and all_row_clean[0].lower() == "all":
-                    col_count = max(len(row_clean), len(all_row_clean))
-                    header = row_clean[:col_count] + ['']*(col_count-len(row_clean))
-                    data_row = all_row_clean[:col_count] + ['']*(col_count-len(all_row_clean))
-                    pairs.append((header, data_row))
-    if pairs:
-        header, data_row = pairs[-1]  # Use the LAST one!
-        df = pd.DataFrame([data_row], columns=header)
-        return df
+        if row and clean(row[0]) == "state summary":
+            header = data[i+1] if i+1 < len(data) else []
+            row_all = data[i+2] if i+2 < len(data) else []
+            if header and row_all and clean(row_all[0]) == "all":
+                col_count = max(len(header), len(row_all))
+                header = [h if h else f"Column_{j}" for j, h in enumerate(header[:col_count])]
+                row_all = row_all[:col_count] + ['']*(col_count-len(row_all))
+                return pd.DataFrame([row_all], columns=header)
+            if i+3 < len(data):
+                row_all = data[i+3]
+                if row_all and clean(row_all[0]) == "all":
+                    col_count = max(len(header), len(row_all))
+                    header = [h if h else f"Column_{j}" for j, h in enumerate(header[:col_count])]
+                    row_all = row_all[:col_count] + ['']*(col_count-len(row_all))
+                    return pd.DataFrame([row_all], columns=header)
     return pd.DataFrame()
 
 def nilambur_bypoll_dashboard(gc):
@@ -380,7 +384,7 @@ def nilambur_bypoll_dashboard(gc):
         allowed_block_labels = summary_label_map.get(summary_selected, [])
 
         if summary_selected == "Overall Summary":
-            df = extract_nilambur_overall_summary_block(data)
+            df = extract_overall_summary_by_block_label(data)
             if df.empty:
                 st.warning("Could not find the correct Nilambur Overall Summary block.")
                 return
