@@ -313,18 +313,26 @@ def plot_horizontal_bar_plotly(df, key=None, colorway="plotly", tab_name=None):
     fig.update_traces(texttemplate='%{text:.2f}', textposition='outside')
     st.plotly_chart(fig, use_container_width=True, key=key)
 
-def extract_nilambur_special_overall(data):
-    def clean(s):
-        if not isinstance(s, str):
-            return s
-        return re.sub(r'[\u200B-\u200F\u202A-\u202E\u2060-\u206F]', '', s).strip()
+def clean_cell(s):
+    """Remove all zero-width and control unicode chars and strip whitespace."""
+    if not isinstance(s, str):
+        return s
+    return re.sub(r'[\u200B-\u200F\u202A-\u202E\u2060-\u206F]', '', s).strip()
+
+def extract_nilambur_overall_summary_block(data):
     for i, row in enumerate(data):
-        row_clean = [clean(cell) for cell in row]
-        if len(row_clean) >= 2 and row_clean[0].lower() == "state":
-            if i + 1 < len(data):
-                all_row_clean = [clean(cell) for cell in data[i+1]]
-                if all_row_clean[0].lower() == "all":
-                    return pd.DataFrame([all_row_clean], columns=row_clean)
+        row_clean = [clean_cell(cell) for cell in row]
+        if row_clean and row_clean[0].lower() == "state":
+            # Next row is 'All'
+            if i+1 < len(data):
+                all_row_clean = [clean_cell(cell) for cell in data[i+1]]
+                if all_row_clean and all_row_clean[0].lower() == "all":
+                    # Ensure header and row have the same length
+                    col_count = max(len(row_clean), len(all_row_clean))
+                    header = row_clean[:col_count] + ['']*(col_count-len(row_clean))
+                    data_row = all_row_clean[:col_count] + ['']*(col_count-len(all_row_clean))
+                    df = pd.DataFrame([data_row], columns=header)
+                    return df
     return pd.DataFrame()
 
 def nilambur_bypoll_dashboard(gc):
@@ -369,14 +377,11 @@ def nilambur_bypoll_dashboard(gc):
         summary_selected = st.selectbox("Choose Summary Type", summary_options)
         allowed_block_labels = summary_label_map.get(summary_selected, [])
 
-        special_overall_tabs = [
-            "Nilambur - Who will you vote for - VN GE Normalization",
-            "Nilambur - Who will you vote for - VN AE Anawar Normalization"
-        ]
-        if tab_for_selection in special_overall_tabs and summary_selected == "Overall Summary":
-            df = extract_nilambur_special_overall(data)
+        # Use robust extraction for all Nilambur Overall Summary
+        if summary_selected == "Overall Summary":
+            df = extract_nilambur_overall_summary_block(data)
             if df.empty:
-                st.warning("Could not extract Overall Summary from this special Nilambur tab.")
+                st.warning("Could not find the correct Nilambur Overall Summary block.")
                 return
             display_label = summary_selected
             st.markdown(f'<div class="center-table"><h4 style="text-align:center">{display_label} ({norm_option})</h4>', unsafe_allow_html=True)
@@ -403,26 +408,11 @@ def nilambur_bypoll_dashboard(gc):
             st.markdown(f'<div class="center-table"><h4 style="text-align:center">{display_label} ({norm_option})</h4>', unsafe_allow_html=True)
             st.dataframe(df)
             st.markdown('</div>', unsafe_allow_html=True)
-            if (
-                summary_selected == "Overall Summary"
-                and df.shape[0] == 1
-                and "State" in df.columns
-                and str(df.iloc[0]["State"]).strip().lower() == "all"
-            ):
-                row = df.iloc[0]
-                party_cols = [col for col in df.columns if col not in ("State", "Grand Total", "Sample Count") and col.strip()]
-                df_plot = pd.DataFrame({
-                    'Option': party_cols,
-                    'Value': [row[col] for col in party_cols]
-                })
-                plot_horizontal_bar_plotly(df_plot, key=f"nilambur_{display_label}_norm_plot", colorway="plotly", tab_name=tab_for_selection)
-            else:
-                plot_horizontal_bar_plotly(df, key=f"nilambur_{display_label}_norm_plot", colorway="plotly", tab_name=tab_for_selection)
+            plot_horizontal_bar_plotly(df, key=f"nilambur_{display_label}_norm_plot", colorway="plotly", tab_name=tab_for_selection)
     except Exception as e:
         st.error(f"Could not load Nilambur Bypoll Survey: {e}")
 
-# --- the rest of your dashboard code remains unchanged ---
-
+# ... rest of the dashboard code (dashboard_geo_section, comparative_dashboard, individual_dashboard, main_dashboard) unchanged ...
 def dashboard_geo_section(blocks, block_prefix, pivot_data, geo_name):
     geo_blocks = [b for b in blocks if b["label"].lower().startswith(block_prefix.lower())]
     if not geo_blocks:
