@@ -244,17 +244,20 @@ def show_centered_dataframe(df, height=400):
     st.markdown(html, unsafe_allow_html=True)
 
 def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
-    # If wide format (single row, many columns), transpose and use only party columns
+    # --- Robust fix: Always use the "All" row, only party columns, and actual values ---
     if df.shape[0] == 1 and df.shape[1] > 2:
+        # Wide format, only one row, options as columns
+        # Use the only row, but double-check if 'State' col is 'All'
+        row = df.iloc[0]
+        # Exclude meta columns
         exclude_cols = ['state', 'grand total', 'sample count', '', None, np.nan]
-        # Only keep option columns for plotting
-        plot_cols = [col for col in df.columns if str(col).strip().lower() not in exclude_cols]
+        party_cols = [col for col in df.columns if str(col).strip().lower() not in exclude_cols]
         meta_cols = ['state', 'grand total', 'sample count']
-        options = [col for col in plot_cols if col.lower() not in meta_cols]
-        # Transpose, keeping only the option columns
+        options = [col for col in party_cols if col.lower() not in meta_cols]
+        # Get the corresponding values for options
         df_plot = pd.DataFrame({
             'Option': options,
-            'Value': [df.loc[0, col] for col in options]
+            'Value': [row[col] for col in options]
         })
         # Filter out any non-numeric/percent values
         def is_percent_or_number(s):
@@ -271,8 +274,10 @@ def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
         df = df_plot
     else:
         label_col = df.columns[0]
-        # Filter out any summary or non-numeric rows
-        df = df[~df[label_col].astype(str).str.lower().isin(['all', 'grand total', 'sample count', '', None, np.nan])]
+        # Find the "All" row if it exists
+        idx = df[label_col].astype(str).str.strip().str.lower() == "all"
+        if idx.any():
+            df = df[idx]
         # Only keep columns that are mostly numeric
         def is_numeric_series(series):
             cnt = 0
@@ -289,20 +294,16 @@ def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
             return cnt / len(series) > 0.7 if len(series) > 0 else False
         value_cols = [col for col in df.columns[1:] if is_numeric_series(df[col])]
         for col in value_cols:
-            try:
-                df[col] = (
-                    df[col].astype(str)
-                    .str.replace('%', '', regex=False)
-                    .str.replace(',', '', regex=False)
-                    .str.replace('−', '-', regex=False)
-                    .str.replace('–', '-', regex=False)
-                    .replace('', '0')
-                    .replace('nan', '0')
-                    .astype(float)
-                )
-            except Exception as e:
-                st.warning(f"Could not convert column {col} to float: {e}")
-                continue
+            df[col] = (
+                df[col].astype(str)
+                .str.replace('%', '', regex=False)
+                .str.replace(',', '', regex=False)
+                .str.replace('−', '-', regex=False)
+                .str.replace('–', '-', regex=False)
+                .replace('', '0')
+                .replace('nan', '0')
+                .astype(float)
+            )
 
     if not value_cols or df.empty:
         st.warning("No suitable value columns to plot.")
@@ -326,7 +327,7 @@ def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
             showlegend=False, bargap=0.2,
             plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa"
         )
-        fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
+        fig.update_traces(texttemplate='%{text:.2f}', textposition='outside')
     else:
         long_df = df.melt(id_vars=label_col, value_vars=value_cols, var_name='Category', value_name='Value')
         fig = px.bar(
@@ -340,7 +341,7 @@ def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
             bargap=0.2, legend_title="Category",
             plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa"
         )
-        fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
+        fig.update_traces(texttemplate='%{text:.2f}', textposition='outside')
     st.plotly_chart(fig, use_container_width=True, key=key)
 
 def dashboard_geo_section(blocks, block_prefix, pivot_data, geo_name):
