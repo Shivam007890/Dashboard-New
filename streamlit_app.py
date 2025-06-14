@@ -153,7 +153,6 @@ def load_pivot_data(_gc, sheet_name, worksheet_name):
     return data
 
 def find_cuts_and_blocks(data, allowed_blocks=None):
-    # allowed_blocks: list of block labels to keep. If None, keep all.
     blocks = []
     for i, row in enumerate(data):
         col1 = row[0] if len(row) > 0 else ""
@@ -312,7 +311,7 @@ def nilambur_bypoll_dashboard(gc):
             st.warning("No Nilambur Bypoll Survey tabs found in this workbook.")
             return
         selected_question = st.selectbox("Select Nilambur Question", question_options)
-        # Norm selector below question
+        # Norm selector below question (now includes VN GE Normalization)
         norms_for_question = [norm for norm, tab in question_map[selected_question]]
         norm_option = st.selectbox("Select Normalisation", norms_for_question)
         # Find the tab for this question + norm
@@ -339,20 +338,17 @@ def nilambur_bypoll_dashboard(gc):
         if df.empty:
             st.warning("No data table found for this summary.")
             return
-        # ---- PATCH: Remap headers for display ----
         display_label = block["label"]
-        # For overall summary, normalize label
         if summary_selected == "Overall Summary":
             display_label = "Overall Summary"
         else:
-            # Remove 'State + ' or similar prefix for other blocks
             for s in ["state + ", "state+", "state "]:
                 if display_label.lower().startswith(s):
                     display_label = display_label[len(s):].lstrip()
         st.markdown(f'<div class="center-table"><h4 style="text-align:center">{display_label} ({norm_option})</h4>', unsafe_allow_html=True)
         show_centered_dataframe(df)
         st.markdown('</div>', unsafe_allow_html=True)
-        plot_horizontal_bar_plotly(df, key=f"nilambur_{block['label']}_norm_plot", colorway="plotly")
+        plot_horizontal_bar_plotly(df, key=f"nilambur_{block["label"]}_norm_plot", colorway="plotly")
     except Exception as e:
         st.error(f"Could not load Nilambur Bypoll Survey: {e}")
 
