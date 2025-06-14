@@ -288,6 +288,76 @@ def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
         fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     st.plotly_chart(fig, use_container_width=True, key=key)
 
+def nilambur_bypoll_dashboard(gc):
+    st.markdown('<div class="section-header">Nilambur Bypoll Survey</div>', unsafe_allow_html=True)
+    try:
+        # List all Nilambur tabs in the spreadsheet
+        all_ws = gc.open(SHEET_NAME).worksheets()
+        nilambur_tabs = [ws.title for ws in all_ws if ws.title.lower().startswith("nilambur - ")]
+        # Find all unique questions (normalize to just question + normalisation)
+        question_norm_tabs = []
+        for t in nilambur_tabs:
+            parts = t.split(" - ")
+            if len(parts) >= 3:
+                question = parts[1].strip()
+                norm = parts[2].strip()
+                question_norm_tabs.append((question, norm, t))
+        # Organize mapping: question -> [norms]
+        question_map = {}
+        for question, norm, tab in question_norm_tabs:
+            if question not in question_map:
+                question_map[question] = []
+            question_map[question].append((norm, tab))
+        # Question selector
+        question_options = list(question_map.keys())
+        if not question_options:
+            st.warning("No Nilambur Bypoll Survey tabs found in this workbook.")
+            return
+        selected_question = st.selectbox("Select Nilambur Question", question_options)
+        # Norm selector below question (now includes VN GE Normalization)
+        norms_for_question = [norm for norm, tab in question_map[selected_question]]
+        norm_option = st.selectbox("Select Normalisation", norms_for_question)
+        # Find the tab for this question + norm
+        tab_for_selection = next(tab for norm, tab in question_map[selected_question] if norm == norm_option)
+        # Load data
+        data = load_pivot_data(gc, SHEET_NAME, tab_for_selection)
+        # Allow Overall, Religion, Gender, Age, Community summaries
+        summary_options = ["Overall Summary", "Religion Summary", "Gender Summary", "Age Summary", "Community Summary"]
+        summary_label_map = {
+            "Overall Summary": ["overall summary", "state summary", "all"],
+            "Religion Summary": ["religion summary", "state + religion summary", "religion"],
+            "Gender Summary": ["gender summary", "state + gender summary", "gender"],
+            "Age Summary": ["age summary", "state + age summary", "age"],
+            "Community Summary": ["community summary", "state + community summary", "community"]
+        }
+        summary_selected = st.selectbox("Choose Summary Type", summary_options)
+        allowed_block_labels = summary_label_map.get(summary_selected, [])
+        blocks = find_cuts_and_blocks(data, allowed_blocks=allowed_block_labels)
+        if not blocks:
+            st.warning("No data block found for summary type in this tab.")
+            return
+        block = blocks[0]
+        df = extract_block_df(data, block)
+        if df.empty:
+            st.warning("No data table found for this summary.")
+            return
+        # ---- PATCH: Remap headers for display ----
+        display_label = block["label"]
+        # For overall summary, normalize label
+        if summary_selected == "Overall Summary":
+            display_label = "Overall Summary"
+        else:
+            # Remove 'State + ' or similar prefix for other blocks
+            for s in ["state + ", "state+", "state "]:
+                if display_label.lower().startswith(s):
+                    display_label = display_label[len(s):].lstrip()
+        st.markdown(f'<div class="center-table"><h4 style="text-align:center">{display_label} ({norm_option})</h4>', unsafe_allow_html=True)
+        show_centered_dataframe(df)
+        st.markdown('</div>', unsafe_allow_html=True)
+        plot_horizontal_bar_plotly(df, key=f"nilambur_{block['label']}_norm_plot", colorway="plotly")
+    except Exception as e:
+        st.error(f"Could not load Nilambur Bypoll Survey: {e}")
+
 def individual_dashboard(gc):
     st.markdown('<div class="section-header">Individual Survey Reports</div>', unsafe_allow_html=True)
     try:
@@ -394,13 +464,16 @@ def main_dashboard(gc):
         "",
         [
             "Periodic Popularity Poll Ticker",
-            "Individual Survey Reports"
+            "Individual Survey Reports",
+            "Nilambur Bypoll Survey"
         ]
     )
     if choice == "Periodic Popularity Poll Ticker":
         comparative_dashboard(gc)
     elif choice == "Individual Survey Reports":
         individual_dashboard(gc)
+    elif choice == "Nilambur Bypoll Survey":
+        nilambur_bypoll_dashboard(gc)
 
 if __name__ == "__main__":
     st.set_page_config(page_title="Kerala Survey Dashboard", layout="wide")
