@@ -494,6 +494,45 @@ def dashboard_geo_section(blocks, block_prefix, pivot_data, geo_name):
     st.markdown('</div>', unsafe_allow_html=True)
     plot_horizontal_bar_plotly(filtered_df, key=f"{block_prefix}_{selected_block_label}_geo_summary_plot", colorway="plotly")
 
+# --- NEW SECTION FOR NILAMBUR BYPOLL ---
+
+def nilambur_bypoll_dashboard(gc):
+    st.markdown('<div class="section-header">Nilambur Bypoll Survey</div>', unsafe_allow_html=True)
+    try:
+        all_ws = gc.open(SHEET_NAME).worksheets()
+        nilambur_sheets = [ws.title for ws in all_ws if "nilambur" in ws.title.lower()]
+        nilambur_options = [
+            "Nilambur - Who will you vote for",
+            "Nilambur - Who will win Nilambur AC"
+        ]
+        tab_map = {
+            opt: next((s for s in nilambur_sheets if opt.lower() in s.lower()), None)
+            for opt in nilambur_options
+        }
+        selected_tab_label = st.selectbox("Select Nilambur Bypoll Survey Question", nilambur_options)
+        worksheet_name = tab_map[selected_tab_label]
+        if not worksheet_name:
+            st.warning(f"Worksheet/tab not found for {selected_tab_label}.")
+            return
+        data = load_pivot_data(gc, SHEET_NAME, worksheet_name)
+        blocks = find_cuts_and_blocks(data)
+        if not blocks:
+            st.warning("No data blocks found in this sheet.")
+            return
+        # Show each cut (block) as in other sections
+        for block in blocks:
+            df = extract_block_df(data, block)
+            if df.empty: continue
+            st.markdown(f'<div class="center-table"><h4 style="text-align:center">{block["label"]}</h4>', unsafe_allow_html=True)
+            show_centered_dataframe(df)
+            st.markdown('</div>', unsafe_allow_html=True)
+            plot_horizontal_bar_plotly(df, key=f"nilambur_{block['label']}_plot", colorway="plotly")
+            st.markdown("---")
+    except Exception as e:
+        st.error(f"Could not load Nilambur Bypoll Survey: {e}")
+
+# --- END NILAMBUR SECTION ---
+
 def main_dashboard(gc):
     inject_custom_css()
     st.markdown("<h1 class='dashboard-title'>Kerala Survey Dashboard</h1>", unsafe_allow_html=True)
@@ -513,13 +552,16 @@ def main_dashboard(gc):
         "",
         [
             "Periodic Popularity Poll Ticker",
-            "Individual Survey Reports"
+            "Individual Survey Reports",
+            "Nilambur Bypoll Survey"
         ]
     )
     if choice == "Periodic Popularity Poll Ticker":
         comparative_dashboard(gc)
     elif choice == "Individual Survey Reports":
         individual_dashboard(gc)
+    elif choice == "Nilambur Bypoll Survey":
+        nilambur_bypoll_dashboard(gc)
 
 def comparative_dashboard(gc):
     try:
