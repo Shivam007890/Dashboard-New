@@ -225,6 +225,33 @@ def extract_block_df(data, block):
         st.warning(f"Could not parse block as table: {err}")
         return pd.DataFrame()
 
+def extract_nilambur_summary_block(data):
+    all_rows = []
+    for idx, row in enumerate(data):
+        if len(row) > 0 and str(row[0]).strip().lower() == 'all':
+            all_rows.append((idx, row))
+    candidates = []
+    for idx, row in all_rows:
+        header_idx = idx - 1
+        while header_idx >= 0 and sum(bool(str(cell).strip()) for cell in data[header_idx]) < 2:
+            header_idx -= 1
+        if header_idx < 0:
+            continue
+        header = data[header_idx]
+        candidates.append((header_idx, idx, header, row))
+    best = None
+    most_cols = 0
+    for header_idx, idx, header, row in candidates:
+        cols = [h for h in header if h.strip() and h.lower() not in ('state', 'grand total', 'sample count')]
+        if len(cols) > most_cols:
+            best = (header_idx, idx, header, row)
+            most_cols = len(cols)
+    if not best:
+        raise Exception("Could not find correct Nilambur block")
+    header_idx, idx, header, row = best
+    df = pd.DataFrame([row], columns=header)
+    return df
+
 def show_centered_dataframe(df, height=400):
     html = '<div style="overflow-x:auto">'
     html += '<style>th, td { text-align:center !important; }</style>'
@@ -245,50 +272,33 @@ def show_centered_dataframe(df, height=400):
 
 def plot_horizontal_bar_plotly(df, key=None, colorway="plotly", tab_name=None):
     import numpy as np
-
-    # Special case ONLY for Nilambur - Who will you vote for - VN GE Normalization and VN AE Anawar Normalization
-    special_tabs = [
-        'vn ge normalization',
-        'vn ae anawar normalization'
-    ]
-    is_special = False
-    if tab_name:
-        tname_lower = tab_name.lower()
-        for s in special_tabs:
-            if s in tname_lower:
-                is_special = True
-                break
-
-    if is_special:
-        # Strongly: Always use the row where State == 'All' and only party columns
-        if "State" in df.columns:
-            all_row = df[df["State"].astype(str).str.strip().str.lower() == "all"]
-            if not all_row.empty:
-                row = all_row.iloc[0]
-                # Only use columns that are party options (skip meta columns)
-                party_cols = [col for col in df.columns if col not in ("State", "Grand Total", "Sample Count") and col.strip()]
-                df_plot = pd.DataFrame({
-                    'Option': party_cols,
-                    'Value': [row[col] for col in party_cols]
-                })
-                # Remove non-numeric/percent values
-                def is_percent_or_number(s):
-                    s = str(s).replace('%','').replace(',','').replace('−','-').replace('–','-')
-                    try:
-                        float(s)
-                        return True
-                    except Exception:
-                        return False
-                df_plot = df_plot[df_plot['Value'].apply(is_percent_or_number)]
-                df_plot['Value'] = df_plot['Value'].astype(str).str.replace('%','').str.replace(',','').str.replace('−','-').str.replace('–','-').astype(float)
-                label_col = 'Option'
-                value_cols = ['Value']
-                df = df_plot
-            else:
-                st.warning("Could not find 'All' row in table.")
-                return
+    nilambur_special = tab_name and (
+        "vn ge normalization" in tab_name.lower() or
+        "vn ae anawar normalization" in tab_name.lower()
+    )
+    if nilambur_special and "State" in df.columns:
+        all_row = df[df["State"].astype(str).str.strip().str.lower() == "all"]
+        if not all_row.empty:
+            row = all_row.iloc[0]
+            party_cols = [col for col in df.columns if col not in ("State", "Grand Total", "Sample Count") and col.strip()]
+            df_plot = pd.DataFrame({
+                'Option': party_cols,
+                'Value': [row[col] for col in party_cols]
+            })
+            def is_percent_or_number(s):
+                s = str(s).replace('%','').replace(',','').replace('−','-').replace('–','-')
+                try:
+                    float(s)
+                    return True
+                except Exception:
+                    return False
+            df_plot = df_plot[df_plot['Value'].apply(is_percent_or_number)]
+            df_plot['Value'] = df_plot['Value'].astype(str).str.replace('%','').str.replace(',','').str.replace('−','-').str.replace('–','-').astype(float)
+            label_col = 'Option'
+            value_cols = ['Value']
+            df = df_plot
         else:
-            st.warning("No 'State' column found.")
+            st.warning("Could not find 'All' row in table.")
             return
     else:
         label_col = df.columns[0]
@@ -323,25 +333,25 @@ def plot_horizontal_bar_plotly(df, key=None, colorway="plotly", tab_name=None):
                 st.warning(f"Could not convert column {col} to float: {e}")
                 continue
 
-    if df.empty or (is_special and df.shape[0] == 0):
+    if df.empty or (nilambur_special and df.shape[0] == 0):
         st.warning("No suitable value columns to plot.")
         st.write("Available columns:", list(df.columns))
         return
 
     colors = px.colors.qualitative.Plotly
-    n_bars = df.shape[0] if is_special or len(df.columns[1:]) == 1 else len(df.columns[1:])
+    n_bars = df.shape[0] if nilambur_special or len(df.columns[1:]) == 1 else len(df.columns[1:])
     colors = colors * ((n_bars // len(colors)) + 1)
 
-    if (is_special and df.shape[0] > 0) or (not is_special and len(df.columns) == 2):
-        value_col = 'Value' if is_special else df.columns[1]
+    if (nilambur_special and df.shape[0] > 0) or (not nilambur_special and len(df.columns) == 2):
+        value_col = 'Value' if nilambur_special else df.columns[1]
         fig = px.bar(
-            df, y='Option' if is_special else label_col, x=value_col, orientation='h', text=value_col,
-            color='Option' if is_special else label_col,
+            df, y='Option' if nilambur_special else label_col, x=value_col, orientation='h', text=value_col,
+            color='Option' if nilambur_special else label_col,
             color_discrete_sequence=colors
         )
         fig.update_layout(
-            title=f"Distribution by {'Option' if is_special else label_col}",
-            xaxis_title=value_col, yaxis_title=('Option' if is_special else label_col),
+            title=f"Distribution by {'Option' if nilambur_special else label_col}",
+            xaxis_title=value_col, yaxis_title=('Option' if nilambur_special else label_col),
             showlegend=False, bargap=0.2,
             plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa"
         )
@@ -515,25 +525,22 @@ def nilambur_bypoll_dashboard(gc):
         summary_selected = st.selectbox("Choose Summary Type", summary_options)
         allowed_block_labels = summary_label_map.get(summary_selected, [])
         blocks = find_cuts_and_blocks(data, allowed_blocks=allowed_block_labels)
-        if not blocks:
-            st.warning("No data block found for summary type in this tab.")
-            return
-        block = blocks[0]
-        df = extract_block_df(data, block)
+        if "vn ge normalization" in tab_for_selection.lower() or "vn ae anawar normalization" in tab_for_selection.lower():
+            df = extract_nilambur_summary_block(data)
+        else:
+            if not blocks:
+                st.warning("No data block found for summary type in this tab.")
+                return
+            block = blocks[0]
+            df = extract_block_df(data, block)
         if df.empty:
             st.warning("No data table found for this summary.")
             return
-        display_label = block["label"]
-        if summary_selected == "Overall Summary":
-            display_label = "Overall Summary"
-        else:
-            for s in ["state + ", "state+", "state "]:
-                if display_label.lower().startswith(s):
-                    display_label = display_label[len(s):].lstrip()
+        display_label = summary_selected
         st.markdown(f'<div class="center-table"><h4 style="text-align:center">{display_label} ({norm_option})</h4>', unsafe_allow_html=True)
         show_centered_dataframe(df)
         st.markdown('</div>', unsafe_allow_html=True)
-        plot_horizontal_bar_plotly(df, key=f"nilambur_{block['label']}_norm_plot", colorway="plotly", tab_name=tab_for_selection)
+        plot_horizontal_bar_plotly(df, key=f"nilambur_{display_label}_norm_plot", colorway="plotly", tab_name=tab_for_selection)
     except Exception as e:
         st.error(f"Could not load Nilambur Bypoll Survey: {e}")
 
