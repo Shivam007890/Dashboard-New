@@ -276,7 +276,7 @@ def plot_horizontal_bar_plotly(df, key=None, colorway="plotly", tab_name=None):
         "vn ge normalization" in tab_name.lower() or
         "vn ae anawar normalization" in tab_name.lower()
     )
-    if nilambur_special and "State" in df.columns:
+    if nilambur_special and "State" in df.columns and df.shape[0] == 1:
         all_row = df[df["State"].astype(str).str.strip().str.lower() == "all"]
         if not all_row.empty:
             row = all_row.iloc[0]
@@ -302,7 +302,7 @@ def plot_horizontal_bar_plotly(df, key=None, colorway="plotly", tab_name=None):
             return
     else:
         label_col = df.columns[0]
-        df = df[~df[label_col].astype(str).str.lower().isin(['all', 'grand total', 'sample count', '', None, np.nan])]
+        # For cuts like Religion/Gender/Age/Community, plot all rows and all numeric columns
         def is_numeric_series(series):
             cnt = 0
             for v in series:
@@ -339,19 +339,19 @@ def plot_horizontal_bar_plotly(df, key=None, colorway="plotly", tab_name=None):
         return
 
     colors = px.colors.qualitative.Plotly
-    n_bars = df.shape[0] if nilambur_special or len(df.columns[1:]) == 1 else len(df.columns[1:])
+    n_bars = df.shape[0] if (nilambur_special and df.shape[0] == 1) or len(df.columns[1:]) == 1 else len(df.columns[1:])
     colors = colors * ((n_bars // len(colors)) + 1)
 
-    if (nilambur_special and df.shape[0] > 0) or (not nilambur_special and len(df.columns) == 2):
-        value_col = 'Value' if nilambur_special else df.columns[1]
+    if (nilambur_special and df.shape[0] == 1) or (not nilambur_special and len(df.columns) == 2):
+        value_col = 'Value' if (nilambur_special and df.shape[0] == 1) else df.columns[1]
         fig = px.bar(
-            df, y='Option' if nilambur_special else label_col, x=value_col, orientation='h', text=value_col,
-            color='Option' if nilambur_special else label_col,
+            df, y='Option' if (nilambur_special and df.shape[0] == 1) else label_col, x=value_col, orientation='h', text=value_col,
+            color='Option' if (nilambur_special and df.shape[0] == 1) else label_col,
             color_discrete_sequence=colors
         )
         fig.update_layout(
-            title=f"Distribution by {'Option' if nilambur_special else label_col}",
-            xaxis_title=value_col, yaxis_title=('Option' if nilambur_special else label_col),
+            title=f"Distribution by {'Option' if (nilambur_special and df.shape[0] == 1) else label_col}",
+            xaxis_title=value_col, yaxis_title=('Option' if (nilambur_special and df.shape[0] == 1) else label_col),
             showlegend=False, bargap=0.2,
             plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa"
         )
@@ -525,7 +525,15 @@ def nilambur_bypoll_dashboard(gc):
         summary_selected = st.selectbox("Choose Summary Type", summary_options)
         allowed_block_labels = summary_label_map.get(summary_selected, [])
         blocks = find_cuts_and_blocks(data, allowed_blocks=allowed_block_labels)
-        if "vn ge normalization" in tab_for_selection.lower() or "vn ae anawar normalization" in tab_for_selection.lower():
+
+        # FIX: Only use special "All" row logic for "Overall Summary"
+        if (
+            summary_selected == "Overall Summary"
+            and (
+                "vn ge normalization" in tab_for_selection.lower()
+                or "vn ae anawar normalization" in tab_for_selection.lower()
+            )
+        ):
             df = extract_nilambur_summary_block(data)
         else:
             if not blocks:
