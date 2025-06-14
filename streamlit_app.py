@@ -245,8 +245,29 @@ def show_centered_dataframe(df, height=400):
 def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
     label_col = df.columns[0]
     df = df[~df[label_col].astype(str).str.lower().str.contains('difference')]
-    exclude_keywords = ['sample', 'total', 'grand']
-    value_cols = [col for col in df.columns[1:] if not any(k in col.strip().lower() for k in exclude_keywords)]
+    exclude_keywords = ['sample', 'total', 'grand', 'sum', 'count']
+    value_cols = [
+        col for col in df.columns[1:]
+        if not any(k in col.strip().lower() for k in exclude_keywords)
+        and all(not col.lower().startswith(x) for x in ['unnamed', ''])
+    ]
+    if len(value_cols) == 0:
+        st.warning("No suitable value columns to plot.")
+        st.write("Available columns:", list(df.columns))
+        return
+    # Try to convert columns to float robustly
+    for col in value_cols:
+        try:
+            df[col] = (
+                df[col].astype(str)
+                .str.replace('%', '', regex=False)
+                .str.replace(',', '', regex=False)
+                .replace('', '0')
+                .astype(float)
+            )
+        except Exception as e:
+            st.warning(f"Could not convert column {col} to float: {e}")
+            continue
     if colorway == "plotly":
         colors = px.colors.qualitative.Plotly
     else:
@@ -256,14 +277,6 @@ def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
         ]
     n_bars = df.shape[0] if len(value_cols) == 1 else len(value_cols)
     colors = colors * ((n_bars // len(colors)) + 1)
-    for col in value_cols:
-        try:
-            df[col] = df[col].astype(str).str.replace('%', '', regex=False).astype(float)
-        except Exception:
-            continue
-    if not value_cols:
-        st.warning("No suitable value columns to plot.")
-        return
     if len(value_cols) == 1:
         value_col = value_cols[0]
         fig = px.bar(
@@ -359,7 +372,6 @@ def individual_dashboard(gc):
         if not question_sheets:
             st.warning("No question sheets found.")
             return
-        # Month selection dropdown
         months = get_month_list(question_sheets)
         if months:
             selected_month = st.selectbox("Select Month", months)
@@ -373,8 +385,6 @@ def individual_dashboard(gc):
         selected_sheet = st.selectbox("Select Question Sheet", question_sheets_filtered)
         data = load_pivot_data(gc, SHEET_NAME, selected_sheet)
         blocks = find_cuts_and_blocks(data)
-        all_labels = [b["label"] for b in blocks]
-        # State Wide Survey Report dropdown
         state_blocks = [b for b in blocks if b["label"].lower().startswith("state")]
         if state_blocks:
             state_labels = [b["label"] for b in state_blocks]
