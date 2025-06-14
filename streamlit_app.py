@@ -244,49 +244,64 @@ def show_centered_dataframe(df, height=400):
     st.markdown(html, unsafe_allow_html=True)
 
 def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
-    label_col = df.columns[0]
-    df = df[~df[label_col].astype(str).str.lower().str.contains('difference')]
-    # Robust numeric detection: only keep columns that are mostly numeric
-    def is_numeric_series(series):
-        cnt = 0
-        for v in series:
-            if pd.isna(v) or v == '':
-                cnt += 1
-                continue
-            s = str(v).replace('%', '').replace(',', '').replace('−', '-').replace('–', '-')
-            try:
-                float(s)
-                cnt += 1
-            except:
-                pass
-        return cnt / len(series) > 0.7 if len(series) > 0 else False
-    value_cols = [
-        col for col in df.columns[1:]
-        if is_numeric_series(df[col])
-    ]
-    # Wide table fix (single row, many columns)
-    if df.shape[0] == 1 and len(value_cols) > 1:
+    # If wide format (single row, many columns), transpose
+    if df.shape[0] == 1 and df.shape[1] > 2:
         df = df.T.reset_index()
         df.columns = ['Option', 'Value']
-        value_cols = ['Value']
+        # Drop the header row and set Option/Value correctly
+        if df.iloc[0]["Option"].strip().lower() in ["option", "state"]:
+            df = df.iloc[1:].reset_index(drop=True)
+        # Remove rows that are not actual options
+        exclude = ['all', 'grand total', 'sample count', '', None, np.nan]
+        df = df[~df['Option'].str.strip().str.lower().isin(exclude)]
+        # Remove any rows where Value is not a number/percent
+        def is_percent_or_number(s):
+            s = str(s).replace('%','').replace(',','').replace('−','-').replace('–','-')
+            try:
+                float(s)
+                return True
+            except Exception:
+                return False
+        df = df[df['Value'].apply(is_percent_or_number)]
+        # Convert Value to float
+        df['Value'] = df['Value'].astype(str).str.replace('%','').str.replace(',','').str.replace('−','-').str.replace('–','-').astype(float)
         label_col = 'Option'
-    # Convert columns to float
-    for col in value_cols:
-        try:
-            df[col] = (
-                df[col].astype(str)
-                .str.replace('%', '', regex=False)
-                .str.replace(',', '', regex=False)
-                .str.replace('−', '-', regex=False)
-                .str.replace('–', '-', regex=False)
-                .replace('', '0')
-                .replace('nan', '0')
-                .astype(float)
-            )
-        except Exception as e:
-            st.warning(f"Could not convert column {col} to float: {e}")
-            continue
-    if not value_cols:
+        value_cols = ['Value']
+    else:
+        label_col = df.columns[0]
+        # Filter out any summary or non-numeric rows
+        df = df[~df[label_col].astype(str).str.lower().isin(['all', 'grand total', 'sample count', '', None, np.nan])]
+        # Only keep columns that are mostly numeric
+        def is_numeric_series(series):
+            cnt = 0
+            for v in series:
+                if pd.isna(v) or v == '':
+                    cnt += 1
+                    continue
+                s = str(v).replace('%', '').replace(',', '').replace('−', '-').replace('–', '-')
+                try:
+                    float(s)
+                    cnt += 1
+                except:
+                    pass
+            return cnt / len(series) > 0.7 if len(series) > 0 else False
+        value_cols = [col for col in df.columns[1:] if is_numeric_series(df[col])]
+        for col in value_cols:
+            try:
+                df[col] = (
+                    df[col].astype(str)
+                    .str.replace('%', '', regex=False)
+                    .str.replace(',', '', regex=False)
+                    .str.replace('−', '-', regex=False)
+                    .str.replace('–', '-', regex=False)
+                    .replace('', '0')
+                    .replace('nan', '0')
+                    .astype(float)
+                )
+            except Exception as e:
+                st.warning(f"Could not convert column {col} to float: {e}")
+                continue
+    if not value_cols or df.empty:
         st.warning("No suitable value columns to plot.")
         st.write("Available columns:", list(df.columns))
         return
@@ -481,11 +496,6 @@ def nilambur_bypoll_dashboard(gc):
             return
         block = blocks[0]
         df = extract_block_df(data, block)
-        # Special-case for GE/Anawar: if just 1 row and many columns, transpose
-        if norm_option.strip().lower() in ["vn ge normalization", "vn ae anawar normalization"]:
-            if df.shape[0] == 1 and df.shape[1] > 2:
-                df = df.T.reset_index()
-                df.columns = ['Option', 'Value']
         if df.empty:
             st.warning("No data table found for this summary.")
             return
