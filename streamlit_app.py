@@ -319,10 +319,9 @@ def nilambur_bypoll_dashboard(gc):
         tab_for_selection = next(tab for norm, tab in question_map[selected_question] if norm == norm_option)
         # Load data
         data = load_pivot_data(gc, SHEET_NAME, tab_for_selection)
-        # Only allow Overall, Religion, Gender, Age, Community summaries
-        summary_options = ["Overall Summary", "Religion Summary", "Gender Summary", "Age Summary", "Community Summary"]
+        # Only allow Religion, Gender, Age, Community summaries
+        summary_options = ["Religion Summary", "Gender Summary", "Age Summary", "Community Summary"]
         summary_label_map = {
-            "Overall Summary": ["overall summary", "state summary", "all"],
             "Religion Summary": ["religion summary", "state + religion summary", "religion"],
             "Gender Summary": ["gender summary", "state + gender summary", "gender"],
             "Age Summary": ["age summary", "state + age summary", "age"],
@@ -339,10 +338,11 @@ def nilambur_bypoll_dashboard(gc):
         if df.empty:
             st.warning("No data table found for this summary.")
             return
-        # ---- PATCH: Remap 'State Summary'/'All' to 'Overall Summary' ----
+        # ---- PATCH: Remap 'State + XYZ Summary' to 'XYZ Summary' ----
         display_label = block["label"]
-        if display_label.strip().lower() in ["state summary", "all"]:
-            display_label = "Overall Summary"
+        for s in ["state + ", "state+", "state "]:
+            if display_label.lower().startswith(s):
+                display_label = display_label[len(s):].lstrip()
         st.markdown(f'<div class="center-table"><h4 style="text-align:center">{display_label} ({norm_option})</h4>', unsafe_allow_html=True)
         show_centered_dataframe(df)
         st.markdown('</div>', unsafe_allow_html=True)
