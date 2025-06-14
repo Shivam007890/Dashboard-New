@@ -7,6 +7,7 @@ import json
 import tempfile
 import plotly.express as px
 import base64
+import numpy as np
 
 SHEET_NAME = "Kerala Weekly Survey Automation Dashboard Test Run"
 
@@ -245,36 +246,51 @@ def show_centered_dataframe(df, height=400):
 def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
     label_col = df.columns[0]
     df = df[~df[label_col].astype(str).str.lower().str.contains('difference')]
-    exclude_keywords = ['sample', 'total', 'grand', 'sum', 'count']
+    # Robust numeric detection: only keep columns that are mostly numeric
+    def is_numeric_series(series):
+        cnt = 0
+        for v in series:
+            if pd.isna(v) or v == '':
+                cnt += 1
+                continue
+            s = str(v).replace('%', '').replace(',', '').replace('−', '-').replace('–', '-')
+            try:
+                float(s)
+                cnt += 1
+            except:
+                pass
+        return cnt / len(series) > 0.7 if len(series) > 0 else False
     value_cols = [
         col for col in df.columns[1:]
-        if not any(k in col.strip().lower() for k in exclude_keywords)
-        and all(not col.lower().startswith(x) for x in ['unnamed', ''])
+        if is_numeric_series(df[col])
     ]
-    if len(value_cols) == 0:
-        st.warning("No suitable value columns to plot.")
-        st.write("Available columns:", list(df.columns))
-        return
-    # Try to convert columns to float robustly
+    # Wide table fix (single row, many columns)
+    if df.shape[0] == 1 and len(value_cols) > 1:
+        df = df.T.reset_index()
+        df.columns = ['Option', 'Value']
+        value_cols = ['Value']
+        label_col = 'Option'
+    # Convert columns to float
     for col in value_cols:
         try:
             df[col] = (
                 df[col].astype(str)
                 .str.replace('%', '', regex=False)
                 .str.replace(',', '', regex=False)
+                .str.replace('−', '-', regex=False)
+                .str.replace('–', '-', regex=False)
                 .replace('', '0')
+                .replace('nan', '0')
                 .astype(float)
             )
         except Exception as e:
             st.warning(f"Could not convert column {col} to float: {e}")
             continue
-    if colorway == "plotly":
-        colors = px.colors.qualitative.Plotly
-    else:
-        colors = [
-            "#1976d2", "#fdbb2d", "#22356f", "#7b1fa2", "#0288d1", "#c2185b",
-            "#ffb300", "#388e3c", "#8d6e63"
-        ]
+    if not value_cols:
+        st.warning("No suitable value columns to plot.")
+        st.write("Available columns:", list(df.columns))
+        return
+    colors = px.colors.qualitative.Plotly
     n_bars = df.shape[0] if len(value_cols) == 1 else len(value_cols)
     colors = colors * ((n_bars // len(colors)) + 1)
     if len(value_cols) == 1:
@@ -465,6 +481,11 @@ def nilambur_bypoll_dashboard(gc):
             return
         block = blocks[0]
         df = extract_block_df(data, block)
+        # Special-case for GE/Anawar: if just 1 row and many columns, transpose
+        if norm_option.strip().lower() in ["vn ge normalization", "vn ae anawar normalization"]:
+            if df.shape[0] == 1 and df.shape[1] > 2:
+                df = df.T.reset_index()
+                df.columns = ['Option', 'Value']
         if df.empty:
             st.warning("No data table found for this summary.")
             return
