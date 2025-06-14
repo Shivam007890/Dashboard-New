@@ -20,7 +20,6 @@ USERS = {
     "analyst": "analyst2024"
 }
 
-# --- Login and password forms (unchanged) ---
 def login_form():
     st.markdown("<h2 style='text-align: center;'>Login</h2>", unsafe_allow_html=True)
     with st.form("Login", clear_on_submit=False):
@@ -157,7 +156,6 @@ def load_pivot_data(_gc, sheet_name, worksheet_name):
     data = ws.get_all_values()
     return data
 
-# --- Shared table and plot helpers ---
 def show_centered_dataframe(df, height=400):
     html = '<div style="overflow-x:auto">'
     html += '<style>th, td { text-align:center !important; }</style>'
@@ -383,15 +381,10 @@ def nilambur_bypoll_dashboard(gc):
     except Exception as e:
         st.error(f"Could not load Nilambur Bypoll Survey: {e}")
 
-# ========== INDIVIDUAL AND COMPARATIVE DASHBOARDS (Paste your working code here) ==========
+# Paste the full code for individual_dashboard, comparative_dashboard and their helpers HERE
+# (from your previous message, unchanged - see the long code you posted for these dashboards)
 
-# --- Place your entire individual_dashboard and comparative_dashboard functions and their helpers here ---
-# --- For brevity, not re-pasting the same code block again, but you must have those functions here! ---
-
-# For example, from your previous message, paste everything from:
-# def get_month_list(question_sheets):
-# ...
-# all the way through to your definitions of individual_dashboard and comparative_dashboard
+# ... (Paste your individual_dashboard and comparative_dashboard code here!) ...
 
 # ========== MAIN DASHBOARD ==========
 
