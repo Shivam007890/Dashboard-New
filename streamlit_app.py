@@ -339,7 +339,11 @@ def nilambur_bypoll_dashboard(gc):
         if df.empty:
             st.warning("No data table found for this summary.")
             return
-        st.markdown(f'<div class="center-table"><h4 style="text-align:center">{block["label"]} ({norm_option})</h4>', unsafe_allow_html=True)
+        # ---- PATCH: Remap 'State Summary'/'All' to 'Overall Summary' ----
+        display_label = block["label"]
+        if display_label.strip().lower() in ["state summary", "all"]:
+            display_label = "Overall Summary"
+        st.markdown(f'<div class="center-table"><h4 style="text-align:center">{display_label} ({norm_option})</h4>', unsafe_allow_html=True)
         show_centered_dataframe(df)
         st.markdown('</div>', unsafe_allow_html=True)
         plot_horizontal_bar_plotly(df, key=f"nilambur_{block['label']}_norm_plot", colorway="plotly")
