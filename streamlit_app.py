@@ -2,12 +2,9 @@ import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
-from io import BytesIO
-from fpdf import FPDF
 import os
 import json
 import tempfile
-import plotly.graph_objects as go
 import plotly.express as px
 import base64
 
@@ -154,15 +151,6 @@ def load_pivot_data(_gc, sheet_name, worksheet_name):
     ws = sh.worksheet(worksheet_name)
     data = ws.get_all_values()
     return data
-
-def get_month_list(question_sheets):
-    months = []
-    for name in question_sheets:
-        if "-" in name:
-            month = name.split("-")[0].strip()
-            if month and month not in months:
-                months.append(month)
-    return months
 
 def find_cuts_and_blocks(data, allowed_blocks=None):
     blocks = []
@@ -328,10 +316,97 @@ def dashboard_geo_section(blocks, block_prefix, pivot_data, geo_name):
     st.markdown('</div>', unsafe_allow_html=True)
     plot_horizontal_bar_plotly(filtered_df, key=f"{block_prefix}_{selected_block_label}_geo_summary_plot", colorway="plotly")
 
+def comparative_dashboard(gc):
+    st.markdown('<div class="section-header">Comparative Analysis (Overall Only)</div>', unsafe_allow_html=True)
+    try:
+        all_ws = gc.open(SHEET_NAME).worksheets()
+        comparative_sheets = [ws.title for ws in all_ws if ws.title.lower().startswith("comp_") or ws.title.lower().startswith("comparative analysis")]
+        if not comparative_sheets:
+            st.warning("No comparative analysis sheets found.")
+            return
+        selected_sheet = st.selectbox("Select Comparative Sheet", comparative_sheets)
+        data = load_pivot_data(gc, SHEET_NAME, selected_sheet)
+        blocks = find_cuts_and_blocks(data)
+        if not blocks:
+            st.warning("No data blocks found in this sheet.")
+            return
+        block = blocks[0]
+        df = extract_block_df(data, block)
+        st.markdown('<div class="center-table">', unsafe_allow_html=True)
+        st.markdown("<h4 style='text-align: center; color: #22356f;'>Comparative Results</h4>", unsafe_allow_html=True)
+        show_centered_dataframe(df, height=min(400, 50 + 40 * len(df)))
+        st.markdown('</div>', unsafe_allow_html=True)
+        plot_horizontal_bar_plotly(df, key=f"comparative_{selected_sheet}")
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.download_button("Download CSV", csv, f"{selected_sheet}_comparative.csv", "text/csv")
+    except Exception as e:
+        st.error(f"Could not load comparative analysis: {e}")
+
+def individual_dashboard(gc):
+    st.markdown('<div class="section-header">Individual Survey Reports</div>', unsafe_allow_html=True)
+    try:
+        all_ws = gc.open(SHEET_NAME).worksheets()
+        question_sheets = [ws.title for ws in all_ws if not ws.title.lower().startswith("comp_") and not ws.title.lower().startswith("comparative analysis") and not ws.title.lower().startswith("nilambur")]
+        if not question_sheets:
+            st.warning("No question sheets found.")
+            return
+        # Month selection dropdown
+        months = get_month_list(question_sheets)
+        if months:
+            selected_month = st.selectbox("Select Month", months)
+            question_sheets_filtered = [qs for qs in question_sheets if qs.startswith(selected_month)]
+        else:
+            selected_month = None
+            question_sheets_filtered = question_sheets
+        if not question_sheets_filtered:
+            st.warning("No sheets found for selected month.")
+            return
+        selected_sheet = st.selectbox("Select Question Sheet", question_sheets_filtered)
+        data = load_pivot_data(gc, SHEET_NAME, selected_sheet)
+        blocks = find_cuts_and_blocks(data)
+        all_labels = [b["label"] for b in blocks]
+        # State Wide Survey Report dropdown
+        state_blocks = [b for b in blocks if b["label"].lower().startswith("state")]
+        if state_blocks:
+            state_labels = [b["label"] for b in state_blocks]
+            selected_state_label = st.selectbox("Select State Wide Survey Report", state_labels)
+            selected_state_block = next(b for b in state_blocks if b["label"] == selected_state_label)
+            df = extract_block_df(data, selected_state_block)
+            if not df.empty:
+                st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_state_label}</h4>', unsafe_allow_html=True)
+                show_centered_dataframe(df)
+                st.markdown('</div>', unsafe_allow_html=True)
+                plot_horizontal_bar_plotly(df, key=f"state_{selected_state_label}_plot", colorway="plotly")
+                st.markdown("---")
+        else:
+            st.info("No State Wide Survey Reports found in this sheet.")
+        geo_sections = [
+            ("District", "District"),
+            ("Zone", "Zone"),
+            ("Region", "Region"),
+            ("AC", "Assembly Constituency"),
+        ]
+        for block_prefix, geo_name in geo_sections:
+            with st.expander(f"{geo_name} Wise Survey Reports ({block_prefix})", expanded=False):
+                dashboard_geo_section(blocks, block_prefix, data, geo_name)
+        cut_labels = ["Religion", "Gender", "Age", "Community"]
+        other_cuts = [b for b in blocks if any(cl.lower() == b["label"].lower() for cl in cut_labels)]
+        if other_cuts:
+            with st.expander("Other Cuts Summary", expanded=False):
+                for block in other_cuts:
+                    df = extract_block_df(data, block)
+                    if df.empty: continue
+                    st.markdown(f'<div class="center-table"><h4 style="text-align:center">{block["label"]}</h4>', unsafe_allow_html=True)
+                    show_centered_dataframe(df)
+                    st.markdown('</div>', unsafe_allow_html=True)
+                    plot_horizontal_bar_plotly(df, key=f"cut_{block['label']}_plot", colorway="plotly")
+                    st.markdown("---")
+    except Exception as e:
+        st.error(f"Could not load individual survey report: {e}")
+
 def nilambur_bypoll_dashboard(gc):
     st.markdown('<div class="section-header">Nilambur Bypoll Survey</div>', unsafe_allow_html=True)
     try:
-        # List all Nilambur tabs in the spreadsheet
         all_ws = gc.open(SHEET_NAME).worksheets()
         nilambur_tabs = [ws.title for ws in all_ws if ws.title.lower().startswith("nilambur - ")]
         # Find all unique questions (normalize to just question + normalisation)
@@ -381,13 +456,10 @@ def nilambur_bypoll_dashboard(gc):
         if df.empty:
             st.warning("No data table found for this summary.")
             return
-        # ---- PATCH: Remap headers for display ----
         display_label = block["label"]
-        # For overall summary, normalize label
         if summary_selected == "Overall Summary":
             display_label = "Overall Summary"
         else:
-            # Remove 'State + ' or similar prefix for other blocks
             for s in ["state + ", "state+", "state "]:
                 if display_label.lower().startswith(s):
                     display_label = display_label[len(s):].lstrip()
