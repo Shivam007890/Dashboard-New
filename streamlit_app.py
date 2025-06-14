@@ -494,7 +494,7 @@ def dashboard_geo_section(blocks, block_prefix, pivot_data, geo_name):
     st.markdown('</div>', unsafe_allow_html=True)
     plot_horizontal_bar_plotly(filtered_df, key=f"{block_prefix}_{selected_block_label}_geo_summary_plot", colorway="plotly")
 
-# --- NEW SECTION FOR NILAMBUR BYPOLL ---
+# --- UPDATED NILAMBUR BYPOLL DASHBOARD ---
 
 def nilambur_bypoll_dashboard(gc):
     st.markdown('<div class="section-header">Nilambur Bypoll Survey</div>', unsafe_allow_html=True)
@@ -528,8 +528,36 @@ def nilambur_bypoll_dashboard(gc):
             st.markdown('</div>', unsafe_allow_html=True)
             plot_horizontal_bar_plotly(df, key=f"nilambur_{block['label']}_plot", colorway="plotly")
             st.markdown("---")
+        
+        # --- NEW: Normalisation Section ---
+        st.markdown('<div class="section-header">Nilambur Normalisation</div>', unsafe_allow_html=True)
+        norm_options = [
+            "Religion Normalisation",
+            "Caste Normalisation",
+            "Category Normalisation"
+        ]
+        norm_selected = st.radio("Show Normalisation Table for:", norm_options, horizontal=True)
+        # Map option to worksheet/tab (update if your tabs are named differently)
+        norm_tab_map = {
+            "Religion Normalisation": next((ws for ws in all_ws if "religion normalisation" in ws.title.lower()), None),
+            "Caste Normalisation": next((ws for ws in all_ws if "caste normalisation" in ws.title.lower()), None),
+            "Category Normalisation": next((ws for ws in all_ws if "category normalisation" in ws.title.lower()), None),
+        }
+        norm_ws = norm_tab_map[norm_selected]
+        if norm_ws:
+            norm_data = load_pivot_data(gc, SHEET_NAME, norm_ws.title)
+            norm_blocks = find_cuts_and_blocks(norm_data)
+            for block in norm_blocks:
+                df = extract_block_df(norm_data, block)
+                if df.empty: continue
+                st.markdown(f'<div class="center-table"><h4 style="text-align:center">{block["label"]}</h4>', unsafe_allow_html=True)
+                show_centered_dataframe(df)
+                st.markdown('</div>', unsafe_allow_html=True)
+                plot_horizontal_bar_plotly(df, key=f"nilambur_{block['label']}_norm_plot", colorway="plotly")
+        else:
+            st.warning("No normalisation data available for the selected category.")
     except Exception as e:
-        st.error(f"Could not load Nilambur Bypoll Survey: {e}")
+        st.error(f"Could not load Nilambur Bypoll Survey or Normalisation: {e}")
 
 # --- END NILAMBUR SECTION ---
 
