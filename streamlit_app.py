@@ -152,6 +152,15 @@ def load_pivot_data(_gc, sheet_name, worksheet_name):
     data = ws.get_all_values()
     return data
 
+def get_month_list(question_sheets):
+    months = []
+    for name in question_sheets:
+        if "-" in name:
+            month = name.split("-")[0].strip()
+            if month and month not in months:
+                months.append(month)
+    return months
+
 def find_cuts_and_blocks(data, allowed_blocks=None):
     blocks = []
     for i, row in enumerate(data):
@@ -409,7 +418,6 @@ def nilambur_bypoll_dashboard(gc):
     try:
         all_ws = gc.open(SHEET_NAME).worksheets()
         nilambur_tabs = [ws.title for ws in all_ws if ws.title.lower().startswith("nilambur - ")]
-        # Find all unique questions (normalize to just question + normalisation)
         question_norm_tabs = []
         for t in nilambur_tabs:
             parts = t.split(" - ")
@@ -417,26 +425,20 @@ def nilambur_bypoll_dashboard(gc):
                 question = parts[1].strip()
                 norm = parts[2].strip()
                 question_norm_tabs.append((question, norm, t))
-        # Organize mapping: question -> [norms]
         question_map = {}
         for question, norm, tab in question_norm_tabs:
             if question not in question_map:
                 question_map[question] = []
             question_map[question].append((norm, tab))
-        # Question selector
         question_options = list(question_map.keys())
         if not question_options:
             st.warning("No Nilambur Bypoll Survey tabs found in this workbook.")
             return
         selected_question = st.selectbox("Select Nilambur Question", question_options)
-        # Norm selector below question (now includes VN GE Normalization)
         norms_for_question = [norm for norm, tab in question_map[selected_question]]
         norm_option = st.selectbox("Select Normalisation", norms_for_question)
-        # Find the tab for this question + norm
         tab_for_selection = next(tab for norm, tab in question_map[selected_question] if norm == norm_option)
-        # Load data
         data = load_pivot_data(gc, SHEET_NAME, tab_for_selection)
-        # Allow Overall, Religion, Gender, Age, Community summaries
         summary_options = ["Overall Summary", "Religion Summary", "Gender Summary", "Age Summary", "Community Summary"]
         summary_label_map = {
             "Overall Summary": ["overall summary", "state summary", "all"],
