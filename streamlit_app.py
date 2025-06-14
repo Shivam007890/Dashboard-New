@@ -286,32 +286,31 @@ def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
         fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     st.plotly_chart(fig, use_container_width=True, key=key)
 
-def extract_overall_summary_by_block_label(data):
-    """
-    Finds the first block whose label is 'State Summary' (case-insensitive, stripped of whitespace/unicode),
-    then fetches the header (next row) and first data row (next row after header).
-    Returns a dataframe with the header and data.
-    """
+# Nilambur fix: always extract the top "State Summary" block, not just first "All"
+def extract_overall_summary_from_nilambur_tab(data):
+    """Extract the first 'State Summary' block (header + first data row) from Nilambur pivot tabs."""
     def clean(s):
-        if not isinstance(s, str):
-            return s
+        if not isinstance(s, str): return s
         return re.sub(r'[\u200B-\u200F\u202A-\u202E\u2060-\u206F]', '', s).strip().lower()
     for i, row in enumerate(data):
         if row and clean(row[0]) == "state summary":
+            # header is next row, "All" is next or next-next row (skip blanks)
             header = data[i+1] if i+1 < len(data) else []
+            # Look for "All" row immediately after header, or after blank
             row_all = data[i+2] if i+2 < len(data) else []
-            if header and row_all and clean(row_all[0]) == "all":
+            if row_all and clean(row_all[0]) == "all":
                 col_count = max(len(header), len(row_all))
                 header = [h if h else f"Column_{j}" for j, h in enumerate(header[:col_count])]
                 row_all = row_all[:col_count] + ['']*(col_count-len(row_all))
                 return pd.DataFrame([row_all], columns=header)
-            if i+3 < len(data):
-                row_all = data[i+3]
-                if row_all and clean(row_all[0]) == "all":
-                    col_count = max(len(header), len(row_all))
+            # If row_all is blank, skip to i+3
+            if row_all == [] or all(cell == '' for cell in row_all):
+                row_all2 = data[i+3] if i+3 < len(data) else []
+                if row_all2 and clean(row_all2[0]) == "all":
+                    col_count = max(len(header), len(row_all2))
                     header = [h if h else f"Column_{j}" for j, h in enumerate(header[:col_count])]
-                    row_all = row_all[:col_count] + ['']*(col_count-len(row_all))
-                    return pd.DataFrame([row_all], columns=header)
+                    row_all2 = row_all2[:col_count] + ['']*(col_count-len(row_all2))
+                    return pd.DataFrame([row_all2], columns=header)
     return pd.DataFrame()
 
 def nilambur_bypoll_dashboard(gc):
@@ -346,7 +345,6 @@ def nilambur_bypoll_dashboard(gc):
         tab_for_selection = next(tab for norm, tab in question_map[selected_question] if norm == norm_option)
         # Load data
         data = load_pivot_data(gc, SHEET_NAME, tab_for_selection)
-        # Allow Overall, Religion, Gender, Age, Community summaries
         summary_options = ["Overall Summary", "Religion Summary", "Gender Summary", "Age Summary", "Community Summary"]
         summary_label_map = {
             "Overall Summary": ["overall summary", "state summary", "all"],
@@ -358,7 +356,7 @@ def nilambur_bypoll_dashboard(gc):
         summary_selected = st.selectbox("Choose Summary Type", summary_options)
         allowed_block_labels = summary_label_map.get(summary_selected, [])
         if summary_selected == "Overall Summary":
-            df = extract_overall_summary_by_block_label(data)
+            df = extract_overall_summary_from_nilambur_tab(data)
             if df.empty:
                 st.warning("Could not find the correct Nilambur Overall Summary block.")
                 return
