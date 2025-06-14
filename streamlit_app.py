@@ -348,9 +348,63 @@ def nilambur_bypoll_dashboard(gc):
         st.markdown(f'<div class="center-table"><h4 style="text-align:center">{display_label} ({norm_option})</h4>', unsafe_allow_html=True)
         show_centered_dataframe(df)
         st.markdown('</div>', unsafe_allow_html=True)
-        plot_horizontal_bar_plotly(df, key=f"nilambur_{block["label"]}_norm_plot", colorway="plotly")
+        plot_horizontal_bar_plotly(df, key=f"nilambur_{block['label']}_norm_plot", colorway="plotly")
     except Exception as e:
         st.error(f"Could not load Nilambur Bypoll Survey: {e}")
+
+def comparative_dashboard(gc):
+    st.markdown('<div class="section-header">Comparative Analysis (Overall Only)</div>', unsafe_allow_html=True)
+    try:
+        all_ws = gc.open(SHEET_NAME).worksheets()
+        comparative_sheets = [ws.title for ws in all_ws if ws.title.lower().startswith("comp_") or ws.title.lower().startswith("comparative analysis")]
+        if not comparative_sheets:
+            st.warning("No comparative analysis sheets found.")
+            return
+        selected_sheet = st.selectbox("Select Comparative Sheet", comparative_sheets)
+        data = load_pivot_data(gc, SHEET_NAME, selected_sheet)
+        blocks = find_cuts_and_blocks(data)
+        if not blocks:
+            st.warning("No data blocks found in this sheet.")
+            return
+        block = blocks[0]
+        df = extract_block_df(data, block)
+        st.markdown('<div class="center-table">', unsafe_allow_html=True)
+        st.markdown("<h4 style='text-align: center; color: #22356f;'>Comparative Results</h4>", unsafe_allow_html=True)
+        show_centered_dataframe(df, height=min(400, 50 + 40 * len(df)))
+        st.markdown('</div>', unsafe_allow_html=True)
+        plot_horizontal_bar_plotly(df, key=f"comparative_{selected_sheet}")
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.download_button("Download CSV", csv, f"{selected_sheet}_comparative.csv", "text/csv")
+    except Exception as e:
+        st.error(f"Could not load comparative analysis: {e}")
+
+def individual_dashboard(gc):
+    st.markdown('<div class="section-header">Individual Survey Reports</div>', unsafe_allow_html=True)
+    try:
+        all_ws = gc.open(SHEET_NAME).worksheets()
+        question_sheets = [ws.title for ws in all_ws if not ws.title.lower().startswith("comp_") and not ws.title.lower().startswith("comparative analysis") and not ws.title.lower().startswith("nilambur")]
+        if not question_sheets:
+            st.warning("No question sheets found.")
+            return
+        selected_sheet = st.selectbox("Select Individual Survey Sheet", question_sheets)
+        data = load_pivot_data(gc, SHEET_NAME, selected_sheet)
+        blocks = find_cuts_and_blocks(data)
+        if not blocks:
+            st.warning("No data blocks found in this sheet.")
+            return
+        block_labels = [b["label"] for b in blocks]
+        selected_block_label = st.selectbox("Select Summary/Block", block_labels)
+        block = next(b for b in blocks if b["label"] == selected_block_label)
+        df = extract_block_df(data, block)
+        if df.empty:
+            st.warning("No data table found for this block.")
+            return
+        st.markdown(f'<div class="center-table"><h4 style="text-align:center">{block["label"]}</h4>', unsafe_allow_html=True)
+        show_centered_dataframe(df)
+        st.markdown('</div>', unsafe_allow_html=True)
+        plot_horizontal_bar_plotly(df, key=f"individual_{block['label']}_plot", colorway="plotly")
+    except Exception as e:
+        st.error(f"Could not load individual survey report: {e}")
 
 def main_dashboard(gc):
     inject_custom_css()
@@ -381,8 +435,6 @@ def main_dashboard(gc):
         individual_dashboard(gc)
     elif choice == "Nilambur Bypoll Survey":
         nilambur_bypoll_dashboard(gc)
-
-# ... (comparative_dashboard, individual_dashboard and other helpers as previously defined) ...
 
 if __name__ == "__main__":
     st.set_page_config(page_title="Kerala Survey Dashboard", layout="wide")
