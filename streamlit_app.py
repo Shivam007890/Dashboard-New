@@ -155,6 +155,15 @@ def load_pivot_data(_gc, sheet_name, worksheet_name):
     data = ws.get_all_values()
     return data
 
+def get_month_list(question_sheets):
+    months = []
+    for name in question_sheets:
+        if "-" in name:
+            month = name.split("-")[0].strip()
+            if month and month not in months:
+                months.append(month)
+    return months
+
 def find_cuts_and_blocks(data, allowed_blocks=None):
     blocks = []
     for i, row in enumerate(data):
@@ -288,6 +297,37 @@ def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
         fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     st.plotly_chart(fig, use_container_width=True, key=key)
 
+def dashboard_geo_section(blocks, block_prefix, pivot_data, geo_name):
+    geo_blocks = [b for b in blocks if b["label"].lower().startswith(block_prefix.lower())]
+    if not geo_blocks:
+        st.info(f"No block found with label starting with {block_prefix}.")
+        return
+    block_labels = [b["label"] for b in geo_blocks]
+    selected_block_label = st.selectbox(f"Select {geo_name} Report Type", block_labels)
+    block = next(b for b in geo_blocks if b["label"] == selected_block_label)
+    df = extract_block_df(pivot_data, block)
+    if df.empty:
+        st.warning(f"No data table found for {selected_block_label}.")
+        return
+    geo_col = df.columns[0]
+    geo_values = df[geo_col].dropna().unique().tolist()
+    select_all = st.checkbox(f"Select all {geo_name}s", value=True, key=f"{block_prefix}_select_all")
+    if select_all:
+        selection = geo_values
+    else:
+        selection = st.multiselect(
+            f"Select one or more {geo_name}s to display", geo_values, default=[],
+            key=f"{block_prefix}_multi_select"
+        )
+    if not selection:
+        st.info(f"Please select at least one {geo_name}.")
+        return
+    filtered_df = df[df[geo_col].isin(selection)]
+    st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_block_label}</h4>', unsafe_allow_html=True)
+    show_centered_dataframe(filtered_df)
+    st.markdown('</div>', unsafe_allow_html=True)
+    plot_horizontal_bar_plotly(filtered_df, key=f"{block_prefix}_{selected_block_label}_geo_summary_plot", colorway="plotly")
+
 def nilambur_bypoll_dashboard(gc):
     st.markdown('<div class="section-header">Nilambur Bypoll Survey</div>', unsafe_allow_html=True)
     try:
@@ -357,93 +397,6 @@ def nilambur_bypoll_dashboard(gc):
         plot_horizontal_bar_plotly(df, key=f"nilambur_{block['label']}_norm_plot", colorway="plotly")
     except Exception as e:
         st.error(f"Could not load Nilambur Bypoll Survey: {e}")
-
-def individual_dashboard(gc):
-    st.markdown('<div class="section-header">Individual Survey Reports</div>', unsafe_allow_html=True)
-    try:
-        all_ws = gc.open(SHEET_NAME).worksheets()
-        sheet_titles = [ws.title for ws in all_ws]
-
-        # Extract unique months and question titles from the format "Month - Question"
-        month_question_pairs = []
-        month_set = set()
-        for title in sheet_titles:
-            parts = title.split(" - ", 1)
-            if len(parts) == 2:
-                month, question = parts
-                month = month.strip()
-                question = question.strip()
-                month_question_pairs.append((month, question, title))
-                month_set.add(month)
-        if not month_set:
-            st.warning("No monthly question sheets (format: 'Month - Question') found.")
-            return
-
-        # Sort months in calendar order if possible
-        months = sorted(
-            month_set,
-            key=lambda m: (
-                ["january","february","march","april","may","june","july","august","september","october","november","december"].index(m.lower())
-                if m.lower() in ["january","february","march","april","may","june","july","august","september","october","november","december"] else 99, m
-            ),
-        )
-        selected_month = st.selectbox("Select Month", months)
-
-        # For the selected month, list all questions/sheets matching this month prefix
-        questions_for_month = [(question, title) for (month, question, title) in month_question_pairs if month == selected_month]
-        if not questions_for_month:
-            st.warning(f"No questions found for month '{selected_month}'.")
-            return
-
-        question_labels = [q for (q, t) in questions_for_month]
-        question_to_sheet = {q: t for (q, t) in questions_for_month}
-        selected_question = st.selectbox("Select Question", question_labels)
-
-        selected_sheet = question_to_sheet[selected_question]
-        data = load_pivot_data(gc, SHEET_NAME, selected_sheet)
-        blocks = find_cuts_and_blocks(data)
-        if not blocks:
-            st.warning("No data blocks found in this sheet.")
-            return
-        block_labels = [b["label"] for b in blocks]
-        selected_block_label = st.selectbox("Select Summary/Block", block_labels)
-        block = next(b for b in blocks if b["label"] == selected_block_label)
-        df = extract_block_df(data, block)
-        if df.empty:
-            st.warning("No data table found for this block.")
-            return
-        st.markdown(f'<div class="center-table"><h4 style="text-align:center">{block["label"]}</h4>', unsafe_allow_html=True)
-        show_centered_dataframe(df)
-        st.markdown('</div>', unsafe_allow_html=True)
-        plot_horizontal_bar_plotly(df, key=f"individual_{block['label']}_plot", colorway="plotly")
-    except Exception as e:
-        st.error(f"Could not load individual survey report: {e}")
-
-def comparative_dashboard(gc):
-    st.markdown('<div class="section-header">Comparative Analysis (Overall Only)</div>', unsafe_allow_html=True)
-    try:
-        all_ws = gc.open(SHEET_NAME).worksheets()
-        comparative_sheets = [ws.title for ws in all_ws if ws.title.lower().startswith("comp_") or ws.title.lower().startswith("comparative analysis")]
-        if not comparative_sheets:
-            st.warning("No comparative analysis sheets found.")
-            return
-        selected_sheet = st.selectbox("Select Comparative Sheet", comparative_sheets)
-        data = load_pivot_data(gc, SHEET_NAME, selected_sheet)
-        blocks = find_cuts_and_blocks(data)
-        if not blocks:
-            st.warning("No data blocks found in this sheet.")
-            return
-        block = blocks[0]
-        df = extract_block_df(data, block)
-        st.markdown('<div class="center-table">', unsafe_allow_html=True)
-        st.markdown("<h4 style='text-align: center; color: #22356f;'>Comparative Results</h4>", unsafe_allow_html=True)
-        show_centered_dataframe(df, height=min(400, 50 + 40 * len(df)))
-        st.markdown('</div>', unsafe_allow_html=True)
-        plot_horizontal_bar_plotly(df, key=f"comparative_{selected_sheet}")
-        csv = df.to_csv(index=False).encode('utf-8')
-        st.download_button("Download CSV", csv, f"{selected_sheet}_comparative.csv", "text/csv")
-    except Exception as e:
-        st.error(f"Could not load comparative analysis: {e}")
 
 def main_dashboard(gc):
     inject_custom_css()
