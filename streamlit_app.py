@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
-from io import BytesIO
 import os
 import json
 import tempfile
@@ -11,22 +10,15 @@ import base64
 
 SHEET_NAME = "Kerala Weekly Survey Automation Dashboard Test Run"
 
-USERS = {
-    "admin": "adminpass",
-    "shivam": "shivampass",
-    "analyst": "analyst2024"
-}
+USERS = {"admin": "adminpass", "shivam": "shivampass", "analyst": "analyst2024"}
 
-# ---- Helper functions ----
+# --- Helper functions (sheet, cuts, months, blocks, extract) ---
 
 def is_question_sheet(ws):
     name = ws.title.strip().lower()
     if hasattr(ws, 'hidden') and ws.hidden:
         return False
-    excluded_prefixes = [
-        'comp_', 'comparative analysis', 'summary', 'dashboard',
-        'meta', 'info', '_'
-    ]
+    excluded_prefixes = ['comp_', 'comparative analysis', 'summary', 'dashboard','meta', 'info', '_']
     for prefix in excluded_prefixes:
         if name.startswith(prefix):
             return False
@@ -113,7 +105,7 @@ def extract_block_df(data, block):
         st.warning(f"Could not parse block as table: {err}")
         return pd.DataFrame()
 
-def show_centered_dataframe(df, height=400):
+def show_centered_dataframe(df):
     html = '<div style="overflow-x:auto">'
     html += '<style>th, td { text-align:center !important; }</style>'
     html += '<table style="margin-left:auto;margin-right:auto;border-collapse:collapse;width:100%;">'
@@ -183,7 +175,7 @@ def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
         fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     st.plotly_chart(fig, use_container_width=True, key=key)
 
-# ---- Streamlit app logic ----
+# --- Streamlit and Google Sheets integration ---
 
 @st.cache_resource
 def get_gspread_client():
@@ -207,6 +199,8 @@ def load_pivot_data(_gc, sheet_name, worksheet_name):
     ws = sh.worksheet(worksheet_name)
     data = ws.get_all_values()
     return data
+
+# ---- Dashboard: Individual ----
 
 def individual_dashboard(gc):
     st.markdown('<div class="section-header">Individual Survey Reports</div>', unsafe_allow_html=True)
@@ -268,12 +262,7 @@ def individual_dashboard(gc):
         else:
             st.info("No State Wide Survey Reports found in this sheet.")
 
-        geo_sections = [
-            ("District", "District"),
-            ("Zone", "Zone"),
-            ("Region", "Region"),
-            ("AC", "Assembly Constituency"),
-        ]
+        geo_sections = [("District", "District"), ("Zone", "Zone"), ("Region", "Region"), ("AC", "Assembly Constituency")]
         for block_prefix, geo_name in geo_sections:
             with st.expander(f"{geo_name} Wise Survey Reports ({block_prefix})", expanded=False):
                 geo_blocks = [b for b in blocks if b["label"].lower().startswith(block_prefix.lower())]
@@ -336,6 +325,145 @@ def individual_dashboard(gc):
     except Exception as e:
         st.error(f"Could not load individual survey report: {e}")
 
+# ---- Dashboard: Nilambur ----
+
+def nilambur_bypoll_dashboard(gc):
+    st.markdown('<div class="section-header">Nilambur Bypoll Survey</div>', unsafe_allow_html=True)
+    try:
+        all_ws = gc.open(SHEET_NAME).worksheets()
+        nilambur_tabs = [ws.title for ws in all_ws if ws.title.lower().startswith("nilambur - ")]
+        question_norm_tabs = []
+        for t in nilambur_tabs:
+            parts = t.split(" - ")
+            if len(parts) >= 3:
+                question = parts[1].strip()
+                norm = parts[2].strip()
+                question_norm_tabs.append((question, norm, t))
+        question_map = {}
+        for question, norm, tab in question_norm_tabs:
+            if question not in question_map:
+                question_map[question] = []
+            question_map[question].append((norm, tab))
+        question_options = list(question_map.keys())
+        if not question_options:
+            st.warning("No Nilambur Bypoll Survey tabs found in this workbook.")
+            return
+        selected_question = st.selectbox("Select Nilambur Question", question_options)
+        norms_for_question = [norm for norm, tab in question_map[selected_question]]
+        norm_option = st.selectbox("Select Normalisation", norms_for_question)
+        tab_for_selection = next(tab for norm, tab in question_map[selected_question] if norm == norm_option)
+        data = load_pivot_data(gc, SHEET_NAME, tab_for_selection)
+        summary_options = ["Overall Summary", "Religion Summary", "Gender Summary", "Age Summary", "Community Summary"]
+        summary_label_map = {
+            "Overall Summary": ["overall summary", "state summary", "all"],
+            "Religion Summary": ["religion summary", "state + religion summary", "religion"],
+            "Gender Summary": ["gender summary", "state + gender summary", "gender"],
+            "Age Summary": ["age summary", "state + age summary", "age"],
+            "Community Summary": ["community summary", "state + community summary", "community"]
+        }
+        summary_selected = st.selectbox("Choose Summary Type", summary_options)
+        allowed_block_labels = summary_label_map.get(summary_selected, [])
+        # Try to find the first matching block
+        blocks = find_cuts_and_blocks(data)
+        found = False
+        for block in blocks:
+            # Match by label
+            if any(lbl in block["label"].lower() for lbl in allowed_block_labels):
+                df = extract_block_df(data, block)
+                if df.empty:
+                    st.warning("No data table found for this summary.")
+                    return
+                display_label = block["label"]
+                st.markdown(f'<div class="center-table"><h4 style="text-align:center">{display_label} ({norm_option})</h4>', unsafe_allow_html=True)
+                show_centered_dataframe(df)
+                st.markdown('</div>', unsafe_allow_html=True)
+                plot_horizontal_bar_plotly(df, key=f"nilambur_{block['label']}_norm_plot", colorway="plotly")
+                found = True
+                break
+        if not found:
+            st.warning("No data block found for summary type in this tab.")
+    except Exception as e:
+        st.error(f"Could not load Nilambur Bypoll Survey: {e}")
+
+# ---- Dashboard: Comparative ----
+
+def comparative_dashboard(gc):
+    try:
+        all_sheets = [ws.title for ws in gc.open(SHEET_NAME).worksheets()]
+        comparative_sheets = [title for title in all_sheets if title.lower().startswith("comp_") or title.lower().startswith("comparative analysis")]
+        if not comparative_sheets:
+            st.warning("No comparative analysis sheets found.")
+            return
+        sorted_sheets = sorted(comparative_sheets)
+        def clean_comp_name(s):
+            if s.lower().startswith("comp_"):
+                return s[5:]
+            return s
+        question_labels = [clean_comp_name(s) for s in sorted_sheets]
+        selected_idx = st.selectbox("Select Question for Comparative Analysis", list(range(len(question_labels))), format_func=lambda i: question_labels[i])
+        selected_sheet = sorted_sheets[selected_idx]
+        data = load_pivot_data(gc, SHEET_NAME, selected_sheet)
+        blocks = find_cuts_and_blocks(data)
+        if not blocks:
+            st.warning("No data blocks found in this sheet.")
+            return
+        block = blocks[0]
+        df = extract_block_df(data, block)
+        st.markdown('<div class="center-table">', unsafe_allow_html=True)
+        st.markdown("<h4 style='text-align: center; color: #22356f;'>Comparative Results</h4>", unsafe_allow_html=True)
+        show_centered_dataframe(df)
+        st.markdown('</div>', unsafe_allow_html=True)
+        plot_horizontal_bar_plotly(df, key_prefix=f"comparative_{selected_sheet}")
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.download_button("Download CSV", csv, f"{selected_sheet}_comparative.csv", "text/csv")
+        st.markdown("---")
+    except Exception as e:
+        st.error(f"Could not load comparative analysis: {e}")
+
+# ---- App main logic ----
+
+def login_form():
+    st.markdown("<h2 style='text-align: center;'>Login</h2>", unsafe_allow_html=True)
+    with st.form("Login", clear_on_submit=False):
+        username = st.text_input("Login ID")
+        password = st.text_input("Password", type="password")
+        submit = st.form_submit_button("Login")
+        if submit:
+            if username in USERS and USERS[username] == password:
+                st.success("Login successful!")
+                st.session_state['logged_in'] = True
+                st.session_state['username'] = username
+                return True
+            else:
+                st.error("Invalid Login ID or Password.")
+                st.session_state['logged_in'] = False
+    return False
+
+def password_setup_form():
+    st.markdown("<h2 style='text-align: center;'>Set/Change Password</h2>", unsafe_allow_html=True)
+    with st.form("PasswordSetup", clear_on_submit=False):
+        username = st.text_input("Login ID", key="psu")
+        old_password = st.text_input("Current Password", type="password", key="psopw")
+        new_password = st.text_input("New Password", type="password", key="psnpw")
+        confirm_password = st.text_input("Confirm New Password", type="password", key="psc")
+        submit = st.form_submit_button("Set/Change Password")
+        if submit:
+            if username not in USERS:
+                st.error("User does not exist.")
+            elif USERS[username] != old_password:
+                st.error("Current password incorrect.")
+            elif new_password != confirm_password:
+                st.error("New passwords do not match.")
+            elif not new_password:
+                st.error("New password cannot be empty.")
+            else:
+                USERS[username] = new_password
+                st.success("Password updated successfully! Please login again.")
+                st.session_state['logged_in'] = False
+                st.session_state['username'] = ""
+                return True
+    return False
+
 def main_dashboard(gc):
     st.markdown("<h1 class='dashboard-title'>Kerala Survey Dashboard</h1>", unsafe_allow_html=True)
     st.markdown("<h2 style='text-align: center; color: #22356f;'>Monthly Survey Analysis</h2>", unsafe_allow_html=True)
@@ -361,11 +489,11 @@ def main_dashboard(gc):
         ]
     )
     if choice == "Periodic Popularity Poll Ticker":
-        st.info("Comparative Dashboard not implemented in this sample.")
+        comparative_dashboard(gc)
     elif choice == "Individual Survey Reports":
         individual_dashboard(gc)
     elif choice == "Nilambur Bypoll Survey":
-        st.info("Nilambur Bypoll Dashboard not implemented in this sample.")
+        nilambur_bypoll_dashboard(gc)
 
 if __name__ == "__main__":
     st.set_page_config(page_title="Kerala Survey Dashboard", layout="wide")
