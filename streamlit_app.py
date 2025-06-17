@@ -20,7 +20,6 @@ USERS = {
     "analyst": "analyst2024"
 }
 
-# --- Login and password forms ---
 def login_form():
     st.markdown("<h2 style='text-align: center;'>Login</h2>", unsafe_allow_html=True)
     with st.form("Login", clear_on_submit=False):
@@ -227,7 +226,6 @@ def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
         fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     st.plotly_chart(fig, use_container_width=True, key=key)
 
-# --- Utility for sheet detection ---
 def is_question_sheet(ws):
     name = ws.title.strip().lower()
     if hasattr(ws, 'hidden') and ws.hidden:
@@ -245,9 +243,74 @@ def is_question_sheet(ws):
             return False
     return True
 
-# ... (other helper functions such as get_month_list, find_cuts_and_blocks, extract_block_df, etc. remain unchanged) ...
+def get_month_list(question_sheets):
+    months = []
+    for name in question_sheets:
+        if "-" in name:
+            month = name.split("-")[0].strip()
+            if month and month not in months:
+                months.append(month)
+    return months
 
-# --- INDIVIDUAL DASHBOARD WITH NORMALISATION SELECTION ---
+def find_cuts_and_blocks(data):
+    blocks = []
+    for i, row in enumerate(data):
+        col1 = row[0] if len(row) > 0 else ""
+        col2 = row[1] if len(row) > 1 else ""
+        col3 = row[2] if len(row) > 2 else ""
+        if str(col1).strip() and (not str(col2).strip() and not str(col3).strip()):
+            if i+1 < len(data) and sum(bool(str(cell).strip()) for cell in data[i+1]) >= 2:
+                j = i+2
+                while j < len(data):
+                    rowj = data[j]
+                    col1j = rowj[0] if len(rowj) > 0 else ""
+                    col2j = rowj[1] if len(rowj) > 1 else ""
+                    col3j = rowj[2] if len(rowj) > 2 else ""
+                    if (str(col1j).strip() and (not str(col2j).strip() and not str(col3j).strip())) or not any(str(cell).strip() for cell in rowj):
+                        break
+                    j += 1
+                blocks.append({
+                    "label": str(col1).strip(),
+                    "start": i,
+                    "header": i+1,
+                    "data_start": i+2,
+                    "data_end": j
+                })
+    if not blocks:
+        for i, row in enumerate(data):
+            if sum(bool(str(cell).strip()) for cell in row) >= 2:
+                j = i+1
+                while j < len(data) and any(str(cell).strip() for cell in data[j]):
+                    j += 1
+                blocks.append({
+                    "label": "Comparative Results",
+                    "start": i-1 if i > 0 else 0,
+                    "header": i,
+                    "data_start": i+1,
+                    "data_end": j
+                })
+                break
+    return blocks
+
+def extract_block_df(data, block):
+    try:
+        header = data[block["header"]]
+        rows = data[block["data_start"]:block["data_end"]]
+        if not rows or not header:
+            return pd.DataFrame()
+        col_count = max(len(header), max((len(r) for r in rows), default=0))
+        header = [h if h else f"Column_{i}" for i, h in enumerate(header[:col_count])]
+        normed_rows = [r[:col_count] + ['']*(col_count-len(r)) for r in rows]
+        df = pd.DataFrame(normed_rows, columns=header)
+        df = make_columns_unique(df)
+        df = df.replace(['', None, 'nan', 'NaN'], pd.NA)
+        df = df.dropna(axis=1, how='all').dropna(axis=0, how='all')
+        df.columns = [str(c).strip() if c else f"Column_{i}" for i, c in enumerate(df.columns)]
+        df = df.loc[:, ~df.columns.duplicated()]
+        return df.reset_index(drop=True)
+    except Exception as err:
+        st.warning(f"Could not parse block as table: {err}")
+        return pd.DataFrame()
 
 def individual_dashboard(gc):
     st.markdown('<div class="section-header">Individual Survey Reports</div>', unsafe_allow_html=True)
@@ -268,7 +331,6 @@ def individual_dashboard(gc):
             st.warning("No sheets found for selected month.")
             return
 
-        # --- Normalisation selection ---
         norm_cols_set = set()
         for sheet_name in question_sheets_filtered:
             data = load_pivot_data(gc, SHEET_NAME, sheet_name)
@@ -377,7 +439,7 @@ def individual_dashboard(gc):
     except Exception as e:
         st.error(f"Could not load individual survey report: {e}")
 
-# ... (rest of your code, including main_dashboard, nilambur_bypoll_dashboard, comparative_dashboard, etc. remains unchanged) ...
+# Add your other dashboards: comparative_dashboard, nilambur_bypoll_dashboard, etc. here as in your original code.
 
 def main_dashboard(gc):
     inject_custom_css()
