@@ -227,7 +227,25 @@ def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
         fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     st.plotly_chart(fig, use_container_width=True, key=key)
 
-# ... Nilambur and comparative/individual helpers as you had above ...
+# --- Utility for sheet detection ---
+def is_question_sheet(ws):
+    name = ws.title.strip().lower()
+    if hasattr(ws, 'hidden') and ws.hidden:
+        return False
+    excluded_prefixes = [
+        'comp_', 'comparative analysis', 'summary', 'dashboard',
+        'meta', 'info', '_'
+    ]
+    for prefix in excluded_prefixes:
+        if name.startswith(prefix):
+            return False
+    auto_exclude = ['sheet', 'instruction', 'data', 'test']
+    for word in auto_exclude:
+        if word in name and len(name) <= len(word) + 2:
+            return False
+    return True
+
+# ... (other helper functions such as get_month_list, find_cuts_and_blocks, extract_block_df, etc. remain unchanged) ...
 
 # --- INDIVIDUAL DASHBOARD WITH NORMALISATION SELECTION ---
 
@@ -250,8 +268,7 @@ def individual_dashboard(gc):
             st.warning("No sheets found for selected month.")
             return
 
-        # --- NEW: Normalisation selection ---
-        # Scan all candidate sheets for normalisation columns
+        # --- Normalisation selection ---
         norm_cols_set = set()
         for sheet_name in question_sheets_filtered:
             data = load_pivot_data(gc, SHEET_NAME, sheet_name)
@@ -277,7 +294,6 @@ def individual_dashboard(gc):
             selected_state_block = next(b for b in state_blocks if b["label"] == selected_state_label)
             df = extract_block_df(data, selected_state_block)
             if not df.empty:
-                # --- NEW: If normalisation selected, apply to numeric columns ---
                 if selected_norm and selected_norm != "(None)" and selected_norm in df.columns:
                     norm_vals = pd.to_numeric(df[selected_norm], errors='coerce')
                     for col in df.columns:
@@ -312,7 +328,6 @@ def individual_dashboard(gc):
                 if df.empty:
                     st.warning(f"No data table found for {selected_block_label}.")
                     continue
-                # --- NEW: If normalisation selected, apply to numeric columns ---
                 if selected_norm and selected_norm != "(None)" and selected_norm in df.columns:
                     norm_vals = pd.to_numeric(df[selected_norm], errors='coerce')
                     for col in df.columns:
@@ -362,7 +377,7 @@ def individual_dashboard(gc):
     except Exception as e:
         st.error(f"Could not load individual survey report: {e}")
 
-# ... The rest of your code remains unchanged, including main_dashboard, nilambur_bypoll_dashboard, comparative_dashboard, etc. ...
+# ... (rest of your code, including main_dashboard, nilambur_bypoll_dashboard, comparative_dashboard, etc. remains unchanged) ...
 
 def main_dashboard(gc):
     inject_custom_css()
