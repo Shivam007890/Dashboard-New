@@ -11,8 +11,6 @@ import base64
 SHEET_NAME = "Kerala Weekly Survey Automation Dashboard Test Run"
 USERS = {"admin": "adminpass", "shivam": "shivampass", "analyst": "analyst2024"}
 
-# --- Helper functions (sheet, cuts, months, blocks, extract) ---
-
 def is_question_sheet(ws):
     name = ws.title.strip().lower()
     if hasattr(ws, 'hidden') and ws.hidden:
@@ -174,8 +172,6 @@ def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
         fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     st.plotly_chart(fig, use_container_width=True, key=key)
 
-# --- Streamlit and Google Sheets integration ---
-
 @st.cache_resource
 def get_gspread_client():
     scopes = [
@@ -198,8 +194,6 @@ def load_pivot_data(_gc, sheet_name, worksheet_name):
     ws = sh.worksheet(worksheet_name)
     data = ws.get_all_values()
     return data
-
-# ---- Dashboard: Individual (Month > Question > Normalisation, like Nilambur) ----
 
 def individual_dashboard(gc):
     st.markdown('<div class="section-header">Individual Survey Reports</div>', unsafe_allow_html=True)
@@ -304,8 +298,6 @@ def individual_dashboard(gc):
     except Exception as e:
         st.error(f"Could not load individual survey report: {e}")
 
-# ---- Dashboard: Nilambur ----
-
 def nilambur_bypoll_dashboard(gc):
     st.markdown('<div class="section-header">Nilambur Bypoll Survey</div>', unsafe_allow_html=True)
     try:
@@ -362,8 +354,6 @@ def nilambur_bypoll_dashboard(gc):
     except Exception as e:
         st.error(f"Could not load Nilambur Bypoll Survey: {e}")
 
-# ---- Dashboard: Comparative ----
-
 def comparative_dashboard(gc):
     try:
         all_sheets = [ws.title for ws in gc.open(SHEET_NAME).worksheets()]
@@ -390,28 +380,32 @@ def comparative_dashboard(gc):
         st.markdown("<h4 style='text-align: center; color: #22356f;'>Comparative Results</h4>", unsafe_allow_html=True)
         show_centered_dataframe(df)
         st.markdown('</div>', unsafe_allow_html=True)
-
-        # ---- LINE GRAPH for Ticker ----
+        # ---- LINE GRAPH for Ticker (exclude sample/total columns) ----
         x_col = df.columns[0]
-        y_cols = [col for col in df.columns[1:] if df[col].apply(lambda x: str(x).replace('.', '', 1).replace('-', '', 1).isdigit()).any()]
+        exclude_keywords = ['sample', 'total', 'count', 'grand']
+        y_cols = [
+            col for col in df.columns[1:]
+            if not any(word in col.strip().lower() for word in exclude_keywords)
+            and df[col].apply(lambda x: str(x).replace('.', '', 1).replace('-', '', 1).replace('%', '').isdigit()).any()
+        ]
+        # Convert to numeric for plotting
+        for col in y_cols:
+            df[col] = df[col].astype(str).str.replace('%','').astype(float)
         fig = px.line(df, x=x_col, y=y_cols, markers=True)
         fig.update_layout(
             title="Popularity Poll Trend",
             xaxis_title=x_col,
-            yaxis_title="Percentage" if "%" in str(df.columns.tolist()) else "",
+            yaxis_title="Percentage",
             plot_bgcolor="#f5f7fa",
             paper_bgcolor="#f5f7fa",
             legend_title="Party/Candidate"
         )
         st.plotly_chart(fig, use_container_width=True)
-
         csv = df.to_csv(index=False).encode('utf-8')
         st.download_button("Download CSV", csv, f"{selected_sheet}_comparative.csv", "text/csv")
         st.markdown("---")
     except Exception as e:
         st.error(f"Could not load comparative analysis: {e}")
-
-# ---- App main logic ----
 
 def login_form():
     st.markdown("<h2 style='text-align: center;'>Login</h2>", unsafe_allow_html=True)
