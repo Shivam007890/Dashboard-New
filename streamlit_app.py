@@ -390,7 +390,21 @@ def comparative_dashboard(gc):
         st.markdown("<h4 style='text-align: center; color: #22356f;'>Comparative Results</h4>", unsafe_allow_html=True)
         show_centered_dataframe(df)
         st.markdown('</div>', unsafe_allow_html=True)
-        plot_horizontal_bar_plotly(df, key=f"comparative_{selected_sheet}")
+
+        # ---- LINE GRAPH for Ticker ----
+        x_col = df.columns[0]
+        y_cols = [col for col in df.columns[1:] if df[col].apply(lambda x: str(x).replace('.', '', 1).replace('-', '', 1).isdigit()).any()]
+        fig = px.line(df, x=x_col, y=y_cols, markers=True)
+        fig.update_layout(
+            title="Popularity Poll Trend",
+            xaxis_title=x_col,
+            yaxis_title="Percentage" if "%" in str(df.columns.tolist()) else "",
+            plot_bgcolor="#f5f7fa",
+            paper_bgcolor="#f5f7fa",
+            legend_title="Party/Candidate"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
         csv = df.to_csv(index=False).encode('utf-8')
         st.download_button("Download CSV", csv, f"{selected_sheet}_comparative.csv", "text/csv")
         st.markdown("---")
