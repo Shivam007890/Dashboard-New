@@ -210,51 +210,48 @@ def individual_dashboard(gc):
         if not question_sheets:
             st.warning("No question sheets found.")
             return
+
+        # --- Step 1: Select Month ---
         months = get_month_list(question_sheets)
         if months:
             selected_month = st.selectbox("Select Month", months)
             question_sheets_filtered = [qs for qs in question_sheets if qs.startswith(selected_month)]
         else:
-            selected_month = None
-            question_sheets_filtered = question_sheets
+            st.warning("No valid months found.")
+            return
+
+        # --- Step 2: Select Question ---
         if not question_sheets_filtered:
             st.warning("No sheets found for selected month.")
             return
+        selected_question = st.selectbox("Select Question Sheet", question_sheets_filtered)
 
-        # --- Normalisation selection ---
-        norm_cols_set = set()
-        for sheet_name in question_sheets_filtered:
-            data = load_pivot_data(gc, SHEET_NAME, sheet_name)
-            if data:
-                for header in data[0]:
-                    if header and "norm" in str(header).lower():
-                        norm_cols_set.add(header)
-        norm_cols = sorted(norm_cols_set, key=lambda x: str(x).lower())
+        # --- Step 3: Load Data and Find Normalisations for Selected Sheet Only ---
+        data = load_pivot_data(gc, SHEET_NAME, selected_question)
+        norm_cols = [col for col in data[0] if col and "norm" in str(col).lower()]
         selected_norm = None
         if norm_cols:
-            selected_norm = st.selectbox("Select Normalisation Column", ["(None)"] + norm_cols)
+            selected_norm = st.selectbox("Select Normalisation Column", norm_cols)
         else:
-            st.info("No normalisation columns detected in these sheets.")
+            st.info("No normalisation columns detected in this sheet.")
 
-        selected_sheet = st.selectbox("Select Question Sheet", question_sheets_filtered)
-        data = load_pivot_data(gc, SHEET_NAME, selected_sheet)
+        # --- Find blocks ---
         blocks = find_cuts_and_blocks(data)
         state_blocks = [b for b in blocks if b["label"].lower().startswith("state")]
+
+        # --- Show state block ---
         if state_blocks:
             state_labels = [b["label"] for b in state_blocks]
             selected_state_label = st.selectbox("Select State Wide Survey Report", state_labels)
             selected_state_block = next(b for b in state_blocks if b["label"] == selected_state_label)
             df = extract_block_df(data, selected_state_block)
             if not df.empty:
-                if selected_norm and selected_norm != "(None)" and selected_norm in df.columns:
-                    norm_vals = pd.to_numeric(df[selected_norm], errors='coerce')
-                    for col in df.columns:
-                        if col not in [df.columns[0], selected_norm]:
-                            try:
-                                df[col] = pd.to_numeric(df[col], errors='coerce') * norm_vals
-                            except Exception:
-                                pass
-                st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_state_label}{(" (" + selected_norm + ")") if selected_norm and selected_norm != "(None)" else ""}</h4>', unsafe_allow_html=True)
+                if selected_norm:
+                    keep_cols = [df.columns[0], selected_norm] + [
+                        col for col in df.columns if col != df.columns[0] and col != selected_norm and col not in norm_cols
+                    ]
+                    df = df[[c for c in keep_cols if c in df.columns]]
+                st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_state_label}{(" (" + selected_norm + ")") if selected_norm else ""}</h4>', unsafe_allow_html=True)
                 show_centered_dataframe(df)
                 st.markdown('</div>', unsafe_allow_html=True)
                 plot_horizontal_bar_plotly(df, key=f"state_{selected_state_label}_plot", colorway="plotly")
@@ -262,6 +259,7 @@ def individual_dashboard(gc):
         else:
             st.info("No State Wide Survey Reports found in this sheet.")
 
+        # --- Geo sections ---
         geo_sections = [("District", "District"), ("Zone", "Zone"), ("Region", "Region"), ("AC", "Assembly Constituency")]
         for block_prefix, geo_name in geo_sections:
             with st.expander(f"{geo_name} Wise Survey Reports ({block_prefix})", expanded=False):
@@ -276,14 +274,11 @@ def individual_dashboard(gc):
                 if df.empty:
                     st.warning(f"No data table found for {selected_block_label}.")
                     continue
-                if selected_norm and selected_norm != "(None)" and selected_norm in df.columns:
-                    norm_vals = pd.to_numeric(df[selected_norm], errors='coerce')
-                    for col in df.columns:
-                        if col not in [df.columns[0], selected_norm]:
-                            try:
-                                df[col] = pd.to_numeric(df[col], errors='coerce') * norm_vals
-                            except Exception:
-                                pass
+                if selected_norm:
+                    keep_cols = [df.columns[0], selected_norm] + [
+                        col for col in df.columns if col != df.columns[0] and col != selected_norm and col not in norm_cols
+                    ]
+                    df = df[[c for c in keep_cols if c in df.columns]]
                 geo_col = df.columns[0]
                 geo_values = df[geo_col].dropna().unique().tolist()
                 select_all = st.checkbox(f"Select all {geo_name}s", value=True, key=f"{block_prefix}_select_all")
@@ -298,7 +293,7 @@ def individual_dashboard(gc):
                     st.info(f"Please select at least one {geo_name}.")
                     continue
                 filtered_df = df[df[geo_col].isin(selection)]
-                st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_block_label}{(" (" + selected_norm + ")") if selected_norm and selected_norm != "(None)" else ""}</h4>', unsafe_allow_html=True)
+                st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_block_label}{(" (" + selected_norm + ")") if selected_norm else ""}</h4>', unsafe_allow_html=True)
                 show_centered_dataframe(filtered_df)
                 st.markdown('</div>', unsafe_allow_html=True)
                 plot_horizontal_bar_plotly(filtered_df, key=f"{block_prefix}_{selected_block_label}_geo_summary_plot", colorway="plotly")
@@ -309,15 +304,12 @@ def individual_dashboard(gc):
                 for block in other_cuts:
                     df = extract_block_df(data, block)
                     if df.empty: continue
-                    if selected_norm and selected_norm != "(None)" and selected_norm in df.columns:
-                        norm_vals = pd.to_numeric(df[selected_norm], errors='coerce')
-                        for col in df.columns:
-                            if col not in [df.columns[0], selected_norm]:
-                                try:
-                                    df[col] = pd.to_numeric(df[col], errors='coerce') * norm_vals
-                                except Exception:
-                                    pass
-                    st.markdown(f'<div class="center-table"><h4 style="text-align:center">{block["label"]}{(" (" + selected_norm + ")") if selected_norm and selected_norm != "(None)" else ""}</h4>', unsafe_allow_html=True)
+                    if selected_norm:
+                        keep_cols = [df.columns[0], selected_norm] + [
+                            col for col in df.columns if col != df.columns[0] and col != selected_norm and col not in norm_cols
+                        ]
+                        df = df[[c for c in keep_cols if c in df.columns]]
+                    st.markdown(f'<div class="center-table"><h4 style="text-align:center">{block["label"]}{(" (" + selected_norm + ")") if selected_norm else ""}</h4>', unsafe_allow_html=True)
                     show_centered_dataframe(df)
                     st.markdown('</div>', unsafe_allow_html=True)
                     plot_horizontal_bar_plotly(df, key=f"cut_{block['label']}_plot", colorway="plotly")
@@ -363,11 +355,9 @@ def nilambur_bypoll_dashboard(gc):
         }
         summary_selected = st.selectbox("Choose Summary Type", summary_options)
         allowed_block_labels = summary_label_map.get(summary_selected, [])
-        # Try to find the first matching block
         blocks = find_cuts_and_blocks(data)
         found = False
         for block in blocks:
-            # Match by label
             if any(lbl in block["label"].lower() for lbl in allowed_block_labels):
                 df = extract_block_df(data, block)
                 if df.empty:
@@ -413,7 +403,7 @@ def comparative_dashboard(gc):
         st.markdown("<h4 style='text-align: center; color: #22356f;'>Comparative Results</h4>", unsafe_allow_html=True)
         show_centered_dataframe(df)
         st.markdown('</div>', unsafe_allow_html=True)
-        plot_horizontal_bar_plotly(df, key_prefix=f"comparative_{selected_sheet}")
+        plot_horizontal_bar_plotly(df, key=f"comparative_{selected_sheet}")
         csv = df.to_csv(index=False).encode('utf-8')
         st.download_button("Download CSV", csv, f"{selected_sheet}_comparative.csv", "text/csv")
         st.markdown("---")
