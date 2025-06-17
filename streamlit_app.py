@@ -380,9 +380,9 @@ def comparative_dashboard(gc):
         st.markdown("<h4 style='text-align: center; color: #22356f;'>Comparative Results</h4>", unsafe_allow_html=True)
         show_centered_dataframe(df)
         st.markdown('</div>', unsafe_allow_html=True)
-        # ---- LINE GRAPH for Ticker (exclude sample/total columns) ----
+        # ---- LINE GRAPH for Ticker (exclude difference/sample/total columns) ----
         x_col = df.columns[0]
-        exclude_keywords = ['sample', 'total', 'count', 'grand']
+        exclude_keywords = ['sample', 'total', 'count', 'grand', 'diff', 'difference']
         y_cols = [
             col for col in df.columns[1:]
             if not any(word in col.strip().lower() for word in exclude_keywords)
