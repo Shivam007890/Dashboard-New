@@ -3,14 +3,11 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from io import BytesIO
-from fpdf import FPDF
 import os
 import json
 import tempfile
-import plotly.graph_objects as go
 import plotly.express as px
 import base64
-import re
 
 SHEET_NAME = "Kerala Weekly Survey Automation Dashboard Test Run"
 
@@ -20,141 +17,7 @@ USERS = {
     "analyst": "analyst2024"
 }
 
-def login_form():
-    st.markdown("<h2 style='text-align: center;'>Login</h2>", unsafe_allow_html=True)
-    with st.form("Login", clear_on_submit=False):
-        username = st.text_input("Login ID")
-        password = st.text_input("Password", type="password")
-        submit = st.form_submit_button("Login")
-        if submit:
-            if username in USERS and USERS[username] == password:
-                st.success("Login successful!")
-                st.session_state['logged_in'] = True
-                st.session_state['username'] = username
-                return True
-            else:
-                st.error("Invalid Login ID or Password.")
-                st.session_state['logged_in'] = False
-    return False
-
-def password_setup_form():
-    st.markdown("<h2 style='text-align: center;'>Set/Change Password</h2>", unsafe_allow_html=True)
-    with st.form("PasswordSetup", clear_on_submit=False):
-        username = st.text_input("Login ID", key="psu")
-        old_password = st.text_input("Current Password", type="password", key="psopw")
-        new_password = st.text_input("New Password", type="password", key="psnpw")
-        confirm_password = st.text_input("Confirm New Password", type="password", key="psc")
-        submit = st.form_submit_button("Set/Change Password")
-        if submit:
-            if username not in USERS:
-                st.error("User does not exist.")
-            elif USERS[username] != old_password:
-                st.error("Current password incorrect.")
-            elif new_password != confirm_password:
-                st.error("New passwords do not match.")
-            elif not new_password:
-                st.error("New password cannot be empty.")
-            else:
-                USERS[username] = new_password
-                st.success("Password updated successfully! Please login again.")
-                st.session_state['logged_in'] = False
-                st.session_state['username'] = ""
-                return True
-    return False
-
-def inject_custom_css():
-    st.markdown("""
-    <style>
-    .dashboard-title {
-        font-size: 2.7rem;
-        font-weight: 700;
-        margin-top: 1.1em;
-        margin-bottom: 0.1em;
-        text-align: center;
-        color: #2d3748;
-        font-family: 'Segoe UI', 'Roboto', Arial, sans-serif;
-        letter-spacing: 0.02em;
-    }
-    .center-map {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        margin-bottom: 1.2em;
-        margin-top: 0.5em;
-    }
-    .section-header {
-        font-size: 1.4rem;
-        font-weight: 700;
-        color: #22356f;
-        margin-top: 1.1em;
-        margin-bottom: 0.4em;
-        text-align: center;
-        letter-spacing: 0.01em;
-    }
-    .center-table {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        margin-top: 1em;
-        margin-bottom: 1em;
-    }
-    .stButton>button {
-        background: #22356f;
-        color: #ffd700;
-        border-radius: 8px;
-        border: none;
-        font-weight: 600;
-        margin: 6px 0;
-        font-size: 1rem;
-        transition: background 0.25s, box-shadow 0.25s;
-        box-shadow: 0 2px 8px #ffd70088;
-    }
-    .stButton>button:hover {
-        background: linear-gradient(90deg, #ffd700 0%, #22356f 100%);
-        color: #22356f;
-        box-shadow: 0 2px 16px #ffd70066;
-    }
-    .stDataFrame {background: rgba(255,255,255,0.98);}
-    </style>
-    """, unsafe_allow_html=True)
-
-def get_image_base64(img_path):
-    with open(img_path, "rb") as img_file:
-        img_bytes = img_file.read()
-    encoded = base64.b64encode(img_bytes).decode("utf-8")
-    return encoded
-
-def make_columns_unique(df):
-    cols = pd.Series(df.columns)
-    for dup in cols[cols.duplicated()].unique():
-        dup_idx = cols[cols == dup].index.tolist()
-        for i, idx in enumerate(dup_idx[1:], 1):
-            cols[idx] = f"{cols[idx]}.{i}"
-    df.columns = cols
-    return df
-
-@st.cache_resource
-def get_gspread_client():
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
-    ]
-    credentials_json = os.getenv("GOOGLE_CREDENTIALS_JSON") if "GOOGLE_CREDENTIALS_JSON" in os.environ else st.secrets["GOOGLE_CREDENTIALS_JSON"]
-    credentials_dict = json.loads(credentials_json)
-    with tempfile.NamedTemporaryFile(mode='w+', suffix='.json', delete=False) as temp_file:
-        json.dump(credentials_dict, temp_file)
-        temp_file_path = temp_file.name
-    credentials = Credentials.from_service_account_file(temp_file_path, scopes=scopes)
-    gc = gspread.authorize(credentials)
-    os.unlink(temp_file_path)
-    return gc
-
-@st.cache_data
-def load_pivot_data(_gc, sheet_name, worksheet_name):
-    sh = _gc.open(sheet_name)
-    ws = sh.worksheet(worksheet_name)
-    data = ws.get_all_values()
-    return data
+# ---- Helper functions ----
 
 def is_question_sheet(ws):
     name = ws.title.strip().lower()
@@ -320,6 +183,31 @@ def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
         fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     st.plotly_chart(fig, use_container_width=True, key=key)
 
+# ---- Streamlit app logic ----
+
+@st.cache_resource
+def get_gspread_client():
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    credentials_json = os.getenv("GOOGLE_CREDENTIALS_JSON") if "GOOGLE_CREDENTIALS_JSON" in os.environ else st.secrets["GOOGLE_CREDENTIALS_JSON"]
+    credentials_dict = json.loads(credentials_json)
+    with tempfile.NamedTemporaryFile(mode='w+', suffix='.json', delete=False) as temp_file:
+        json.dump(credentials_dict, temp_file)
+        temp_file_path = temp_file.name
+    credentials = Credentials.from_service_account_file(temp_file_path, scopes=scopes)
+    gc = gspread.authorize(credentials)
+    os.unlink(temp_file_path)
+    return gc
+
+@st.cache_data
+def load_pivot_data(_gc, sheet_name, worksheet_name):
+    sh = _gc.open(sheet_name)
+    ws = sh.worksheet(worksheet_name)
+    data = ws.get_all_values()
+    return data
+
 def individual_dashboard(gc):
     st.markdown('<div class="section-header">Individual Survey Reports</div>', unsafe_allow_html=True)
     try:
@@ -339,6 +227,7 @@ def individual_dashboard(gc):
             st.warning("No sheets found for selected month.")
             return
 
+        # --- Normalisation selection ---
         norm_cols_set = set()
         for sheet_name in question_sheets_filtered:
             data = load_pivot_data(gc, SHEET_NAME, sheet_name)
@@ -356,7 +245,6 @@ def individual_dashboard(gc):
         selected_sheet = st.selectbox("Select Question Sheet", question_sheets_filtered)
         data = load_pivot_data(gc, SHEET_NAME, selected_sheet)
         blocks = find_cuts_and_blocks(data)
-        all_labels = [b["label"] for b in blocks]
         state_blocks = [b for b in blocks if b["label"].lower().startswith("state")]
         if state_blocks:
             state_labels = [b["label"] for b in state_blocks]
@@ -379,6 +267,7 @@ def individual_dashboard(gc):
                 st.markdown("---")
         else:
             st.info("No State Wide Survey Reports found in this sheet.")
+
         geo_sections = [
             ("District", "District"),
             ("Zone", "Zone"),
@@ -447,18 +336,17 @@ def individual_dashboard(gc):
     except Exception as e:
         st.error(f"Could not load individual survey report: {e}")
 
-# You would add your comparative_dashboard, nilambur_bypoll_dashboard, etc. functions here
-
 def main_dashboard(gc):
-    inject_custom_css()
     st.markdown("<h1 class='dashboard-title'>Kerala Survey Dashboard</h1>", unsafe_allow_html=True)
     st.markdown("<h2 style='text-align: center; color: #22356f;'>Monthly Survey Analysis</h2>", unsafe_allow_html=True)
     map_path = "kerala_political_map.png"
     if os.path.exists(map_path):
+        with open(map_path, "rb") as imgf:
+            imgdata = base64.b64encode(imgf.read()).decode('utf-8')
         st.markdown(
             f'''
             <div class="center-map">
-                <img src="data:image/png;base64,{get_image_base64(map_path)}" width="320" alt="Kerala Map"/>
+                <img src="data:image/png;base64,{imgdata}" width="320" alt="Kerala Map"/>
             </div>
             ''',
             unsafe_allow_html=True
