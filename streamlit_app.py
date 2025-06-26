@@ -51,12 +51,12 @@ def get_gsheet_metadata(folder_name):
     _, credentials = get_gspread_client_and_creds()
     return list_gsheet_files_in_folder(credentials, folder_name)
 
-def select_gsheet_file(section="Individual Survey Reports"):
+def select_gsheet_file(section="Stratified Survey Reports"):
     files = get_gsheet_metadata(GOOGLE_DRIVE_OUTPUT_FOLDER)
     if not files:
         st.warning("No Google Sheets files found in the output folder.")
         return None
-    if section == "Individual Survey Reports":
+    if section == "Stratified Survey Reports":
         files = [f for f in files if f['name'].startswith("Kerala_Survey_") and not "Comparative" in f['name']]
     elif section == "Periodic Popularity Poll Ticker":
         files = [f for f in files if "Comparative" in f['name']]
@@ -327,8 +327,8 @@ def comparative_dashboard(gc):
     except Exception as e:
         st.error(f"Could not load comparative analysis: {e}")
 
-def individual_dashboard(gc):
-    st.markdown('<div class="section-header">Individual Survey Reports</div>', unsafe_allow_html=True)
+def Stratified_dashboard(gc):
+    st.markdown('<div class="section-header">Stratified Survey Reports</div>', unsafe_allow_html=True)
     files = get_gsheet_metadata(GOOGLE_DRIVE_OUTPUT_FOLDER)
     month_files = [f for f in files if f['name'].startswith("Kerala_Survey_") and not "Comparative" in f['name']]
     if not month_files:
@@ -458,7 +458,7 @@ selected_block_label = st.selectbox("Select Summary Report", state_block_labels)
                     plot_horizontal_bar_plotly(df, key=f"cut_{block['label']}_plot", colorway="plotly")
                     st.markdown("---")
     except Exception as e:
-        st.error(f"Could not load individual survey report: {e}")
+        st.error(f"Could not load Stratified survey report: {e}")
 
 def login_form():
     st.markdown("<h2 style='text-align: center;'>Login</h2>", unsafe_allow_html=True)
@@ -521,13 +521,13 @@ def main_dashboard(gc):
         "",
         [
             "Periodic Popularity Poll Ticker",
-            "Individual Survey Reports"
+            "Stratified Survey Reports"
         ]
     )
     if choice == "Periodic Popularity Poll Ticker":
         comparative_dashboard(gc)
-    elif choice == "Individual Survey Reports":
-        individual_dashboard(gc)
+    elif choice == "Stratified Survey Reports":
+        Stratified_dashboard(gc)
 
 if __name__ == "__main__":
     st.set_page_config(page_title="Kerala Survey Dashboard", layout="wide")
