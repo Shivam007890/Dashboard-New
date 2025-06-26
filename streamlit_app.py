@@ -8,6 +8,7 @@ import tempfile
 import plotly.express as px
 import base64
 from googleapiclient.discovery import build
+from streamlit.components.v1 import html
 
 GOOGLE_DRIVE_OUTPUT_FOLDER = "Kerala Survey Report Output"
 USERS = {"admin": "adminpass", "shivam": "shivampass", "analyst": "analyst2024"}
@@ -172,8 +173,7 @@ def show_centered_dataframe(df):
     html += '</tbody></table></div>'
     st.markdown(html, unsafe_allow_html=True)
 
-def plot_trend_by_party(df, key=None):
-    # Custom colors for parties
+def plot_trend_by_party(df, key=None, show_margin_calculator=True):
     party_colors = {
         "BJP": "#ff6d01",
         "UDF": "#4285f4",
@@ -184,16 +184,15 @@ def plot_trend_by_party(df, key=None):
     plot_df = df.copy()
     for party in parties:
         plot_df[party] = plot_df[party].astype(str).str.replace('%', '').astype(float)
-    plot_df = plot_df.melt(id_vars=label_col, value_vars=parties, var_name="Party", value_name="Value")
-    # Assign color list based on party order in plot_df['Party'].unique()
+    plot_df = plot_df.melt(id_vars=label_col, value_vars=parties, var_name="Party/Candidate", value_name="Value")
     color_discrete_map = {}
-    for party in plot_df['Party'].unique():
+    for party in plot_df['Party/Candidate'].unique():
         color_discrete_map[party] = party_colors.get(party, None)
     fig = px.line(
         plot_df,
         x=label_col,
         y="Value",
-        color="Party",
+        color="Party/Candidate",
         markers=True,
         labels={"Value": "Percentage", label_col: "Month"},
         color_discrete_map=color_discrete_map
@@ -206,32 +205,79 @@ def plot_trend_by_party(df, key=None):
     )
     st.plotly_chart(fig, use_container_width=True, key=key)
 
-    # Margin calculator UI
-    st.markdown("### Margin Calculator")
-    timeline_options = plot_df[label_col].unique().tolist()
-    if len(timeline_options) < 2:
-        st.info("At least two time points are needed for margin calculation.")
-        return
-    t1, t2 = st.selectbox("Select First Time Point", timeline_options, index=0, key="margin_t1"), \
-             st.selectbox("Select Second Time Point", timeline_options, index=1, key="margin_t2")
-    if t1 == t2:
-        st.info("Select two different time points to compare margin.")
-        return
-    df_t1 = plot_df[plot_df[label_col] == t1].set_index("Party")["Value"]
-    df_t2 = plot_df[plot_df[label_col] == t2].set_index("Party")["Value"]
-    margin_df = pd.DataFrame({
-        "Party": df_t1.index,
-        f"{t1}": df_t1.values,
-        f"{t2}": df_t2.loc[df_t1.index].values,
-        "Margin": (df_t2.loc[df_t1.index] - df_t1.values).round(2)
-    })
-    show_centered_dataframe(margin_df)
+    if show_margin_calculator:
+        st.markdown("### Margin Calculator")
+        timeline_options = plot_df[label_col].unique().tolist()
+        if len(timeline_options) < 2:
+            st.info("At least two time points are needed for margin calculation.")
+            return
+        t1, t2 = st.selectbox("Select First Time Point", timeline_options, index=0, key=f"{key}_margin_t1"), \
+                 st.selectbox("Select Second Time Point", timeline_options, index=1, key=f"{key}_margin_t2")
+        if t1 == t2:
+            st.info("Select two different time points to compare margin.")
+            return
+        df_t1 = plot_df[plot_df[label_col] == t1].set_index("Party/Candidate")["Value"]
+        df_t2 = plot_df[plot_df[label_col] == t2].set_index("Party/Candidate")["Value"]
+        margin_df = pd.DataFrame({
+            "Party/Candidate": df_t1.index,
+            f"{t1}": df_t1.values,
+            f"{t2}": df_t2.loc[df_t1.index].values,
+            "Margin": (df_t2.loc[df_t1.index] - df_t1.values).round(2)
+        })
+        show_centered_dataframe(margin_df)
+        margin_colors = [party_colors.get(p, px.colors.qualitative.Plotly[i % 10]) for i, p in enumerate(margin_df["Party/Candidate"])]
+        margin_fig = px.bar(
+            margin_df,
+            x="Party/Candidate",
+            y="Margin",
+            color="Party/Candidate",
+            color_discrete_sequence=margin_colors,
+            text="Margin"
+        )
+        margin_fig.update_layout(
+            title="Margin Between Selected Time Points",
+            xaxis_title="Party/Candidate",
+            yaxis_title="Margin",
+            showlegend=False,
+            plot_bgcolor="#f5f7fa",
+            paper_bgcolor="#f5f7fa"
+        )
+        margin_fig.update_traces(texttemplate='%{text:.2f}', textposition='outside')
+        st.plotly_chart(margin_fig, use_container_width=True, key=f"{key}_margin_chart")
 
 def load_pivot_data_by_id(gc, file_id, worksheet_name):
     sh = gc.open_by_key(file_id)
     ws = sh.worksheet(worksheet_name)
     data = ws.get_all_values()
     return data
+
+def download_dashboard_as_pdf():
+    st.markdown("""
+    <hr>
+    <h4>Download Dashboard as PDF</h4>
+    <small>You can save the full dashboard as a PDF (with pages automatically divided) by clicking below.<br>
+    <b>Note:</b> This may not work on all browsers or for extremely long dashboards.<br>
+    For best results, use Chrome or Edge. </small>
+    """, unsafe_allow_html=True)
+    html_string = """
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <button style="padding:8px 24px; font-size:18px; margin:10px 0;" onclick="printPDF()">Download PDF</button>
+    <script>
+    function printPDF() {
+      var element = document.querySelector('section.main');
+      var opt = {
+        margin:       [0.5, 0.5, 0.5, 0.5],
+        filename:     'kerala-survey-dashboard.pdf',
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2 },
+        jsPDF:        { unit: 'in', format: 'a4', orientation: 'landscape' },
+        pagebreak:    { mode: ['avoid-all', 'css', 'legacy'] }
+      };
+      html2pdf().set(opt).from(element).save();
+    }
+    </script>
+    """
+    html(html_string, height=100)
 
 def comparative_dashboard(gc):
     files = get_gsheet_metadata(GOOGLE_DRIVE_OUTPUT_FOLDER)
@@ -296,9 +342,10 @@ def comparative_dashboard(gc):
         show_centered_dataframe(df_final)
         st.markdown('</div>', unsafe_allow_html=True)
 
-        plot_trend_by_party(df_final, key="comparative_trend_party")
+        plot_trend_by_party(df_final, key="comparative_trend_party", show_margin_calculator=True)
         csv = df_final.to_csv(index=False).encode('utf-8')
         st.download_button("Download CSV", csv, f"{selected_question}_{selected_norm}_comparative.csv", "text/csv")
+        download_dashboard_as_pdf()
         st.markdown("---")
 
     except Exception as e:
@@ -375,7 +422,8 @@ def Stratified_dashboard(gc):
         st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_block_label}{(" (" + selected_norm + ")") if selected_norm else ""}</h4>', unsafe_allow_html=True)
         show_centered_dataframe(df)
         st.markdown('</div>', unsafe_allow_html=True)
-        plot_trend_by_party(df, key="stratified_trend_party")
+        plot_trend_by_party(df, key="stratified_trend_party", show_margin_calculator=False)
+        download_dashboard_as_pdf()
         st.markdown("---")
 
         geo_sections = [("District", "District"), ("Zone", "Zone"), ("Region", "Region"), ("AC", "Assembly Constituency")]
@@ -408,7 +456,7 @@ def Stratified_dashboard(gc):
                 st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_block_label}{(" (" + selected_norm + ")") if selected_norm else ""}</h4>', unsafe_allow_html=True)
                 show_centered_dataframe(filtered_df)
                 st.markdown('</div>', unsafe_allow_html=True)
-                plot_trend_by_party(filtered_df, key=f"{block_prefix}_{selected_block_label}_geo_trend_party")
+                plot_trend_by_party(filtered_df, key=f"{block_prefix}_{selected_block_label}_geo_trend_party", show_margin_calculator=False)
         cut_labels = ["Religion", "Gender", "Age", "Community"]
         other_cuts = [b for b in blocks if any(cl.lower() == b["label"].lower() for cl in cut_labels)]
         if other_cuts:
@@ -420,7 +468,7 @@ def Stratified_dashboard(gc):
                     st.markdown(f'<div class="center-table"><h4 style="text-align:center">{block["label"]}{(" (" + selected_norm + ")") if selected_norm else ""}</h4>', unsafe_allow_html=True)
                     show_centered_dataframe(df)
                     st.markdown('</div>', unsafe_allow_html=True)
-                    plot_trend_by_party(df, key=f"cut_{block['label']}_trend_party")
+                    plot_trend_by_party(df, key=f"cut_{block['label']}_trend_party", show_margin_calculator=False)
                     st.markdown("---")
     except Exception as e:
         st.error(f"Could not load Stratified survey report: {e}")
