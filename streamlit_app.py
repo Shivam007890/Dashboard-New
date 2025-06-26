@@ -342,26 +342,28 @@ def comparative_dashboard(gc):
 
 def individual_dashboard(gc):
     st.markdown('<div class="section-header">Individual Survey Reports</div>', unsafe_allow_html=True)
-    selected_file = select_gsheet_file(section="Individual Survey Reports")
-    if not selected_file:
+    # List only month files
+    files = get_gsheet_metadata(GOOGLE_DRIVE_OUTPUT_FOLDER)
+    month_files = [f for f in files if f['name'].startswith("Kerala_Survey_") and not "Comparative" in f['name']]
+    if not month_files:
+        st.warning("No month-wise files found.")
         return
+    # Sort by month (assuming file names like Kerala_Survey_May_2025)
+    month_files = sorted(month_files, key=lambda f: f['name'])
+    month_options = [f['name'].replace("Kerala_Survey_", "").replace(".xlsx", "") for f in month_files]
+    selected_month_idx = st.selectbox("Select Month", range(len(month_options)), format_func=lambda i: month_options[i])
+    selected_file = month_files[selected_month_idx]
+
+    # Get sheets/questions from the selected file
     try:
         all_ws = gc.open_by_key(selected_file['id']).worksheets()
         question_sheets = [ws.title for ws in all_ws if is_question_sheet(ws)]
         if not question_sheets:
-            st.warning("No question sheets found.")
+            st.warning("No question sheets found in this month file.")
             return
-        months = get_month_list(question_sheets)
-        if months:
-            selected_month = st.selectbox("Select Month", months)
-            question_sheets_filtered = [qs for qs in question_sheets if qs.startswith(selected_month)]
-        else:
-            st.warning("No valid months found.")
-            return
-        if not question_sheets_filtered:
-            st.warning("No sheets found for selected month.")
-            return
-        selected_question = st.selectbox("Select Question Sheet", question_sheets_filtered)
+        selected_question = st.selectbox("Select Question", question_sheets)
+
+        # Load the selected sheet for norm/summary options
         data = load_pivot_data_by_id(gc, selected_file['id'], selected_question)
         norm_cols = [col for col in data[0] if col and "norm" in str(col).lower()]
         selected_norm = None
@@ -369,80 +371,33 @@ def individual_dashboard(gc):
             selected_norm = st.selectbox("Select Normalisation Column", norm_cols)
         else:
             st.info("No normalisation columns detected in this sheet.")
+
         blocks = find_cuts_and_blocks(data)
-        state_blocks = [b for b in blocks if b["label"].lower().startswith("state")]
-        if state_blocks:
-            state_labels = [b["label"] for b in state_blocks]
-            selected_state_label = st.selectbox("Select State Wide Survey Report", state_labels)
-            selected_state_block = next(b for b in state_blocks if b["label"] == selected_state_label)
-            df = extract_block_df(data, selected_state_block)
-            if not df.empty:
-                if selected_norm:
-                    keep_cols = [df.columns[0], selected_norm] + [
-                        col for col in df.columns if col != df.columns[0] and col != selected_norm and col not in norm_cols
-                    ]
-                    df = df[[c for c in keep_cols if c in df.columns]]
-                st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_state_label}{(" (" + selected_norm + ")") if selected_norm else ""}</h4>', unsafe_allow_html=True)
-                show_centered_dataframe(df)
-                st.markdown('</div>', unsafe_allow_html=True)
-                plot_horizontal_bar_plotly(df, key=f"state_{selected_state_label}_plot", colorway="plotly")
-                st.markdown("---")
-        else:
-            st.info("No State Wide Survey Reports found in this sheet.")
-        geo_sections = [("District", "District"), ("Zone", "Zone"), ("Region", "Region"), ("AC", "Assembly Constituency")]
-        for block_prefix, geo_name in geo_sections:
-            with st.expander(f"{geo_name} Wise Survey Reports ({block_prefix})", expanded=False):
-                geo_blocks = [b for b in blocks if b["label"].lower().startswith(block_prefix.lower())]
-                if not geo_blocks:
-                    st.info(f"No block found with label starting with {block_prefix}.")
-                    continue
-                block_labels = [b["label"] for b in geo_blocks]
-                selected_block_label = st.selectbox(f"Select {geo_name} Report Type", block_labels, key=f"{block_prefix}_report_type")
-                block = next(b for b in geo_blocks if b["label"] == selected_block_label)
-                df = extract_block_df(data, block)
-                if df.empty:
-                    st.warning(f"No data table found for {selected_block_label}.")
-                    continue
-                if selected_norm:
-                    keep_cols = [df.columns[0], selected_norm] + [
-                        col for col in df.columns if col != df.columns[0] and col != selected_norm and col not in norm_cols
-                    ]
-                    df = df[[c for c in keep_cols if c in df.columns]]
-                geo_col = df.columns[0]
-                geo_values = df[geo_col].dropna().unique().tolist()
-                select_all = st.checkbox(f"Select all {geo_name}s", value=True, key=f"{block_prefix}_select_all")
-                if select_all:
-                    selection = geo_values
-                else:
-                    selection = st.multiselect(
-                        f"Select one or more {geo_name}s to display", geo_values, default=[],
-                        key=f"{block_prefix}_multi_select"
-                    )
-                if not selection:
-                    st.info(f"Please select at least one {geo_name}.")
-                    continue
-                filtered_df = df[df[geo_col].isin(selection)]
-                st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_block_label}{(" (" + selected_norm + ")") if selected_norm else ""}</h4>', unsafe_allow_html=True)
-                show_centered_dataframe(filtered_df)
-                st.markdown('</div>', unsafe_allow_html=True)
-                plot_horizontal_bar_plotly(filtered_df, key=f"{block_prefix}_{selected_block_label}_geo_summary_plot", colorway="plotly")
-        cut_labels = ["Religion", "Gender", "Age", "Community"]
-        other_cuts = [b for b in blocks if any(cl.lower() == b["label"].lower() for cl in cut_labels)]
-        if other_cuts:
-            with st.expander("Other Cuts Summary", expanded=False):
-                for block in other_cuts:
-                    df = extract_block_df(data, block)
-                    if df.empty: continue
-                    if selected_norm:
-                        keep_cols = [df.columns[0], selected_norm] + [
-                            col for col in df.columns if col != df.columns[0] and col != selected_norm and col not in norm_cols
-                        ]
-                        df = df[[c for c in keep_cols if c in df.columns]]
-                    st.markdown(f'<div class="center-table"><h4 style="text-align:center">{block["label"]}{(" (" + selected_norm + ")") if selected_norm else ""}</h4>', unsafe_allow_html=True)
-                    show_centered_dataframe(df)
-                    st.markdown('</div>', unsafe_allow_html=True)
-                    plot_horizontal_bar_plotly(df, key=f"cut_{block['label']}_plot", colorway="plotly")
-                    st.markdown("---")
+        if not blocks:
+            st.warning("No summary report types found.")
+            return
+
+        block_labels = [b["label"] for b in blocks]
+        selected_block_label = st.selectbox("Select Summary Report", block_labels)
+        selected_block = next(b for b in blocks if b["label"] == selected_block_label)
+        df = extract_block_df(data, selected_block)
+
+        # Remove 'Grand Total' row(s) and column(s)
+        df = df.loc[~df[df.columns[0]].astype(str).str.lower().str.contains("grand total")]
+        df = df.drop(columns=[col for col in df.columns if "grand total" in str(col).lower()], errors="ignore")
+
+        # Keep only selected norm column if applicable
+        if selected_norm and selected_norm in df.columns:
+            keep_cols = [df.columns[0], selected_norm] + [
+                col for col in df.columns if col != df.columns[0] and col != selected_norm and col not in norm_cols
+            ]
+            df = df[[c for c in keep_cols if c in df.columns]]
+
+        st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_block_label}{(" (" + selected_norm + ")") if selected_norm else ""}</h4>', unsafe_allow_html=True)
+        show_centered_dataframe(df)
+        st.markdown('</div>', unsafe_allow_html=True)
+        plot_horizontal_bar_plotly(df, key=f"state_{selected_block_label}_plot", colorway="plotly")
+        st.markdown("---")
     except Exception as e:
         st.error(f"Could not load individual survey report: {e}")
 
