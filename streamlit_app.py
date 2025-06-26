@@ -161,69 +161,71 @@ def show_centered_dataframe(df):
     '''
     html += '<table style="margin-left:auto;margin-right:auto;border-collapse:collapse;width:100%;">'
     html += '<thead><tr>'
-    # Do NOT add a <th> for the index
     for col in df.columns:
         html += f'<th style="border:1px solid #ddd;background:#f5f7fa;">{col}</th>'
     html += '</tr></thead><tbody>'
     for _, row in df.iterrows():
         html += '<tr>'
-        # Do NOT add a <td> for the index
         for cell in row:
             html += f'<td style="border:1px solid #ddd;">{cell if pd.notna(cell) else ""}</td>'
         html += '</tr>'
     html += '</tbody></table></div>'
-    st.markdown(html, unsafe_allow_html=True)    
-def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
+    st.markdown(html, unsafe_allow_html=True)
+
+def plot_trend_by_party(df, key=None):
+    # Custom colors for parties
+    party_colors = {
+        "BJP": "#ff6d01",
+        "UDF": "#4285f4",
+        "LDF": "#db261d"
+    }
     label_col = df.columns[0]
-    df = df[~df[label_col].astype(str).str.lower().str.contains('difference')]
-    exclude_keywords = ['sample', 'total', 'grand']
-    value_cols = [col for col in df.columns[1:] if not any(k in col.strip().lower() for k in exclude_keywords)]
-    if colorway == "plotly":
-        colors = px.colors.qualitative.Plotly
-    else:
-        colors = [
-            "#1976d2", "#fdbb2d", "#22356f", "#7b1fa2", "#0288d1", "#c2185b",
-            "#ffb300", "#388e3c", "#8d6e63"
-        ]
-    n_bars = df.shape[0] if len(value_cols) == 1 else len(value_cols)
-    colors = colors * ((n_bars // len(colors)) + 1)
-    for col in value_cols:
-        try:
-            df[col] = df[col].astype(str).str.replace('%', '', regex=False).astype(float)
-        except Exception:
-            continue
-    if not value_cols:
-        st.warning("No suitable value columns to plot.")
-        return
-    if len(value_cols) == 1:
-        value_col = value_cols[0]
-        fig = px.bar(
-            df, y=label_col, x=value_col, orientation='h', text=value_col,
-            color=label_col,
-            color_discrete_sequence=colors
-        )
-        fig.update_layout(
-            title=f"Distribution by {label_col}",
-            xaxis_title=value_col, yaxis_title=label_col,
-            showlegend=False, bargap=0.2,
-            plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa"
-        )
-        fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
-    else:
-        long_df = df.melt(id_vars=label_col, value_vars=value_cols, var_name='Category', value_name='Value')
-        fig = px.bar(
-            long_df, y=label_col, x='Value', color='Category',
-            orientation='h', barmode='group', text='Value',
-            color_discrete_sequence=colors
-        )
-        fig.update_layout(
-            title=f"Distribution by {label_col}",
-            xaxis_title='Value', yaxis_title=label_col,
-            bargap=0.2, legend_title="Category",
-            plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa"
-        )
-        fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
+    parties = [c for c in df.columns if c != label_col]
+    plot_df = df.copy()
+    for party in parties:
+        plot_df[party] = plot_df[party].astype(str).str.replace('%', '').astype(float)
+    plot_df = plot_df.melt(id_vars=label_col, value_vars=parties, var_name="Party", value_name="Value")
+    # Assign color list based on party order in plot_df['Party'].unique()
+    color_discrete_map = {}
+    for party in plot_df['Party'].unique():
+        color_discrete_map[party] = party_colors.get(party, None)
+    fig = px.line(
+        plot_df,
+        x=label_col,
+        y="Value",
+        color="Party",
+        markers=True,
+        labels={"Value": "Percentage", label_col: "Month"},
+        color_discrete_map=color_discrete_map
+    )
+    fig.update_layout(
+        title="Party and Leader Popularity Tracker",
+        plot_bgcolor="#f5f7fa",
+        paper_bgcolor="#f5f7fa",
+        legend_title="Party/Candidate"
+    )
     st.plotly_chart(fig, use_container_width=True, key=key)
+
+    # Margin calculator UI
+    st.markdown("### Margin Calculator")
+    timeline_options = plot_df[label_col].unique().tolist()
+    if len(timeline_options) < 2:
+        st.info("At least two time points are needed for margin calculation.")
+        return
+    t1, t2 = st.selectbox("Select First Time Point", timeline_options, index=0, key="margin_t1"), \
+             st.selectbox("Select Second Time Point", timeline_options, index=1, key="margin_t2")
+    if t1 == t2:
+        st.info("Select two different time points to compare margin.")
+        return
+    df_t1 = plot_df[plot_df[label_col] == t1].set_index("Party")["Value"]
+    df_t2 = plot_df[plot_df[label_col] == t2].set_index("Party")["Value"]
+    margin_df = pd.DataFrame({
+        "Party": df_t1.index,
+        f"{t1}": df_t1.values,
+        f"{t2}": df_t2.loc[df_t1.index].values,
+        "Margin": (df_t2.loc[df_t1.index] - df_t1.values).round(2)
+    })
+    show_centered_dataframe(margin_df)
 
 def load_pivot_data_by_id(gc, file_id, worksheet_name):
     sh = gc.open_by_key(file_id)
@@ -294,26 +296,7 @@ def comparative_dashboard(gc):
         show_centered_dataframe(df_final)
         st.markdown('</div>', unsafe_allow_html=True)
 
-        parties = [c for c in df_final.columns if c not in ["Month", ""]]
-        plot_df = df_final.copy()
-        for party in parties:
-            plot_df[party] = plot_df[party].astype(str).str.replace('%','').astype(float)
-        plot_df = plot_df.melt(id_vars="Month", value_vars=parties, var_name="Party", value_name="Value")
-        fig = px.line(
-            plot_df,
-            x="Month",
-            y="Value",
-            color="Party",
-            markers=True,
-            labels={"Value": "Percentage", "Month": "Month"},
-        )
-        fig.update_layout(
-            title="Trend by Month",
-            plot_bgcolor="#f5f7fa",
-            paper_bgcolor="#f5f7fa",
-            legend_title="Party/Candidate"
-        )
-        st.plotly_chart(fig, use_container_width=True)
+        plot_trend_by_party(df_final, key="comparative_trend_party")
         csv = df_final.to_csv(index=False).encode('utf-8')
         st.download_button("Download CSV", csv, f"{selected_question}_{selected_norm}_comparative.csv", "text/csv")
         st.markdown("---")
@@ -368,7 +351,6 @@ def Stratified_dashboard(gc):
             st.warning("No summary report types found.")
             return
 
-        # Only include State summaries up to State + Community Summary
         def is_state_summary(label):
             label_lower = label.strip().lower()
             allowed = [
@@ -393,7 +375,7 @@ def Stratified_dashboard(gc):
         st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_block_label}{(" (" + selected_norm + ")") if selected_norm else ""}</h4>', unsafe_allow_html=True)
         show_centered_dataframe(df)
         st.markdown('</div>', unsafe_allow_html=True)
-        plot_horizontal_bar_plotly(df, key=f"summary_{selected_block_label}_plot", colorway="plotly")
+        plot_trend_by_party(df, key="stratified_trend_party")
         st.markdown("---")
 
         geo_sections = [("District", "District"), ("Zone", "Zone"), ("Region", "Region"), ("AC", "Assembly Constituency")]
@@ -426,7 +408,7 @@ def Stratified_dashboard(gc):
                 st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_block_label}{(" (" + selected_norm + ")") if selected_norm else ""}</h4>', unsafe_allow_html=True)
                 show_centered_dataframe(filtered_df)
                 st.markdown('</div>', unsafe_allow_html=True)
-                plot_horizontal_bar_plotly(filtered_df, key=f"{block_prefix}_{selected_block_label}_geo_summary_plot", colorway="plotly")
+                plot_trend_by_party(filtered_df, key=f"{block_prefix}_{selected_block_label}_geo_trend_party")
         cut_labels = ["Religion", "Gender", "Age", "Community"]
         other_cuts = [b for b in blocks if any(cl.lower() == b["label"].lower() for cl in cut_labels)]
         if other_cuts:
@@ -438,7 +420,7 @@ def Stratified_dashboard(gc):
                     st.markdown(f'<div class="center-table"><h4 style="text-align:center">{block["label"]}{(" (" + selected_norm + ")") if selected_norm else ""}</h4>', unsafe_allow_html=True)
                     show_centered_dataframe(df)
                     st.markdown('</div>', unsafe_allow_html=True)
-                    plot_horizontal_bar_plotly(df, key=f"cut_{block['label']}_plot", colorway="plotly")
+                    plot_trend_by_party(df, key=f"cut_{block['label']}_trend_party")
                     st.markdown("---")
     except Exception as e:
         st.error(f"Could not load Stratified survey report: {e}")
