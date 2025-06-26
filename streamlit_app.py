@@ -34,7 +34,6 @@ def list_gsheet_files_in_folder(credentials, folder_name):
         folders = drive_service.files().list(
             q=f"mimeType='application/vnd.google-apps.folder' and name='{folder_name}'",
             fields="files(id, name)").execute().get('files', [])
-        st.write("DEBUG: Folders found:", folders)
         if not folders:
             st.warning(f"Folder '{folder_name}' not found or not shared with the service account.")
             return []
@@ -43,7 +42,6 @@ def list_gsheet_files_in_folder(credentials, folder_name):
             q=f"mimeType='application/vnd.google-apps.spreadsheet' and '{folder_id}' in parents",
             fields="files(id, name, parents)").execute()
         files = results.get('files', [])
-        st.write("DEBUG: Files found in folder:", files)
         return files
     except Exception as e:
         st.error(f"Google Drive API error: {e}")
@@ -62,8 +60,6 @@ def select_gsheet_file(section="Individual Survey Reports"):
         files = [f for f in files if f['name'].startswith("Kerala_Survey_") and not "Comparative" in f['name']]
     elif section == "Periodic Popularity Poll Ticker":
         files = [f for f in files if "Comparative" in f['name']]
-    elif section == "Nilambur Bypoll Survey":
-        files = [f for f in files if "Nilambur" in f['name']]
     if not files:
         st.warning(f"No files found for section '{section}'.")
         return None
@@ -84,15 +80,6 @@ def is_question_sheet(ws):
         if word in name and len(name) <= len(word) + 2:
             return False
     return True
-
-def get_month_list(question_sheets):
-    months = []
-    for name in question_sheets:
-        if "-" in name:
-            month = name.split("-")[0].strip()
-            if month and month not in months:
-                months.append(month)
-    return months
 
 def find_cuts_and_blocks(data):
     blocks = []
@@ -454,66 +441,6 @@ def individual_dashboard(gc):
                     st.markdown("---")
     except Exception as e:
         st.error(f"Could not load individual survey report: {e}")
-        
-def nilambur_bypoll_dashboard(gc):
-    st.markdown('<div class="section-header">Nilambur Bypoll Survey</div>', unsafe_allow_html=True)
-    selected_file = select_gsheet_file(section="Nilambur Bypoll Survey")
-    if not selected_file:
-        st.info("No Nilambur bypoll file found.")
-        return
-    try:
-        all_ws = gc.open_by_key(selected_file['id']).worksheets()
-        nilambur_tabs = [ws.title for ws in all_ws if ws.title.lower().startswith("nilambur - ")]
-        question_norm_tabs = []
-        for t in nilambur_tabs:
-            parts = t.split(" - ")
-            if len(parts) >= 3:
-                question = parts[1].strip()
-                norm = parts[2].strip()
-                question_norm_tabs.append((question, norm, t))
-        question_map = {}
-        for question, norm, tab in question_norm_tabs:
-            if question not in question_map:
-                question_map[question] = []
-            question_map[question].append((norm, tab))
-        question_options = list(question_map.keys())
-        if not question_options:
-            st.warning("No Nilambur Bypoll Survey tabs found in this workbook.")
-            return
-        selected_question = st.selectbox("Select Nilambur Question", question_options)
-        norms_for_question = [norm for norm, tab in question_map[selected_question]]
-        norm_option = st.selectbox("Select Normalisation", norms_for_question)
-        tab_for_selection = next(tab for norm, tab in question_map[selected_question] if norm == norm_option)
-        data = load_pivot_data_by_id(gc, selected_file['id'], tab_for_selection)
-        summary_options = ["Overall Summary", "Religion Summary", "Gender Summary", "Age Summary", "Community Summary"]
-        summary_label_map = {
-            "Overall Summary": ["overall summary", "state summary", "all"],
-            "Religion Summary": ["religion summary", "state + religion summary", "religion"],
-            "Gender Summary": ["gender summary", "state + gender summary", "gender"],
-            "Age Summary": ["age summary", "state + age summary", "age"],
-            "Community Summary": ["community summary", "state + community summary", "community"]
-        }
-        summary_selected = st.selectbox("Choose Summary Type", summary_options)
-        allowed_block_labels = summary_label_map.get(summary_selected, [])
-        blocks = find_cuts_and_blocks(data)
-        found = False
-        for block in blocks:
-            if any(lbl in block["label"].lower() for lbl in allowed_block_labels):
-                df = extract_block_df(data, block)
-                if df.empty:
-                    st.warning("No data table found for this summary.")
-                    return
-                display_label = block["label"]
-                st.markdown(f'<div class="center-table"><h4 style="text-align:center">{display_label} ({norm_option})</h4>', unsafe_allow_html=True)
-                show_centered_dataframe(df)
-                st.markdown('</div>', unsafe_allow_html=True)
-                plot_horizontal_bar_plotly(df, key=f"nilambur_{block['label']}_norm_plot", colorway="plotly")
-                found = True
-                break
-        if not found:
-            st.warning("No data block found for summary type in this tab.")
-    except Exception as e:
-        st.error(f"Could not load Nilambur Bypoll Survey: {e}")
 
 def login_form():
     st.markdown("<h2 style='text-align: center;'>Login</h2>", unsafe_allow_html=True)
@@ -559,6 +486,7 @@ def password_setup_form():
 
 def main_dashboard(gc):
     st.markdown("<h1 class='dashboard-title' style='text-align:center;'>Kerala Survey Dashboard</h1>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center; color: #22356f;'>Monthly Survey Analysis</h2>", unsafe_allow_html=True)
     map_path = "kerala_political_map.png"
     if os.path.exists(map_path):
         with open(map_path, "rb") as imgf:
@@ -576,16 +504,13 @@ def main_dashboard(gc):
         "",
         [
             "Periodic Popularity Poll Ticker",
-            "Individual Survey Reports",
-            "Nilambur Bypoll Survey"
+            "Individual Survey Reports"
         ]
     )
     if choice == "Periodic Popularity Poll Ticker":
         comparative_dashboard(gc)
     elif choice == "Individual Survey Reports":
         individual_dashboard(gc)
-    elif choice == "Nilambur Bypoll Survey":
-        nilambur_bypoll_dashboard(gc)
 
 if __name__ == "__main__":
     st.set_page_config(page_title="Kerala Survey Dashboard", layout="wide")
