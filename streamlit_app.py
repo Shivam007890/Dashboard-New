@@ -342,13 +342,12 @@ def comparative_dashboard(gc):
 
 def individual_dashboard(gc):
     st.markdown('<div class="section-header">Individual Survey Reports</div>', unsafe_allow_html=True)
-    # List only month files
     files = get_gsheet_metadata(GOOGLE_DRIVE_OUTPUT_FOLDER)
     month_files = [f for f in files if f['name'].startswith("Kerala_Survey_") and not "Comparative" in f['name']]
     if not month_files:
         st.warning("No month-wise files found.")
         return
-    # Sort by month (assuming file names like Kerala_Survey_May_2025)
+    # Sort and prepare month dropdown
     month_files = sorted(month_files, key=lambda f: f['name'])
     month_options = [f['name'].replace("Kerala_Survey_", "").replace(".xlsx", "") for f in month_files]
     selected_month_idx = st.selectbox("Select Month", range(len(month_options)), format_func=lambda i: month_options[i])
@@ -356,20 +355,33 @@ def individual_dashboard(gc):
 
     try:
         all_ws = gc.open_by_key(selected_file['id']).worksheets()
-        question_sheets = [ws.title for ws in all_ws if is_question_sheet(ws)]
-        if not question_sheets:
+        # Parse question/norm from tab name: [QUESTION] - [NORM]
+        question_norms = []
+        for ws in all_ws:
+            if '-' in ws.title:
+                q, norm = ws.title.split('-', 1)
+                question_norms.append((q.strip(), norm.strip(), ws.title))
+            else:
+                question_norms.append((ws.title.strip(), "", ws.title))
+        if not question_norms:
             st.warning("No question sheets found in this month file.")
             return
-        selected_question = st.selectbox("Select Question", question_sheets)
-
-        data = load_pivot_data_by_id(gc, selected_file['id'], selected_question)
-        norm_cols = [col for col in data[0] if col and "norm" in str(col).lower()]
-        selected_norm = None
-        if norm_cols:
-            selected_norm = st.selectbox("Select Normalisation Column", norm_cols)
+        questions = sorted(list(set(q for q, norm, t in question_norms)))
+        selected_question = st.selectbox("Select Question", questions)
+        # Norms for selected question
+        available_norms = sorted(list(set(norm for q, norm, t in question_norms if q == selected_question and norm)))
+        if available_norms:
+            selected_norm = st.selectbox("Select Normalisation", available_norms)
         else:
-            st.info("No normalisation columns detected in this sheet.")
+            selected_norm = ""
+            st.info("No normalisation found in question name.")
+        # Find worksheet for this selection
+        selected_tab = next((t for q, norm, t in question_norms if q == selected_question and (norm == selected_norm or not available_norms)), None)
+        if not selected_tab:
+            st.warning("No matching worksheet found.")
+            return
 
+        data = load_pivot_data_by_id(gc, selected_file['id'], selected_tab)
         blocks = find_cuts_and_blocks(data)
         if not blocks:
             st.warning("No summary report types found.")
@@ -383,13 +395,6 @@ def individual_dashboard(gc):
         # Remove 'Grand Total' row(s) and column(s)
         df = df.loc[~df[df.columns[0]].astype(str).str.lower().str.contains("grand total")]
         df = df.drop(columns=[col for col in df.columns if "grand total" in str(col).lower()], errors="ignore")
-        # Keep only selected norm column if applicable
-        if selected_norm and selected_norm in df.columns:
-            keep_cols = [df.columns[0], selected_norm] + [
-                col for col in df.columns if col != df.columns[0] and col != selected_norm and col not in norm_cols
-            ]
-            df = df[[c for c in keep_cols if c in df.columns]]
-
         st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_block_label}{(" (" + selected_norm + ")") if selected_norm else ""}</h4>', unsafe_allow_html=True)
         show_centered_dataframe(df)
         st.markdown('</div>', unsafe_allow_html=True)
@@ -408,15 +413,8 @@ def individual_dashboard(gc):
                 selected_block_label = st.selectbox(f"Select {geo_name} Report Type", block_labels, key=f"{block_prefix}_report_type")
                 block = next(b for b in geo_blocks if b["label"] == selected_block_label)
                 df = extract_block_df(data, block)
-                # Remove 'Grand Total' rows/columns
                 df = df.loc[~df[df.columns[0]].astype(str).str.lower().str.contains("grand total")]
                 df = df.drop(columns=[col for col in df.columns if "grand total" in str(col).lower()], errors="ignore")
-                # Keep only selected norm column if applicable
-                if selected_norm and selected_norm in df.columns:
-                    keep_cols = [df.columns[0], selected_norm] + [
-                        col for col in df.columns if col != df.columns[0] and col != selected_norm and col not in norm_cols
-                    ]
-                    df = df[[c for c in keep_cols if c in df.columns]]
                 geo_col = df.columns[0]
                 geo_values = df[geo_col].dropna().unique().tolist()
                 select_all = st.checkbox(f"Select all {geo_name}s", value=True, key=f"{block_prefix}_select_all")
@@ -442,22 +440,16 @@ def individual_dashboard(gc):
             with st.expander("Other Cuts Summary", expanded=False):
                 for block in other_cuts:
                     df = extract_block_df(data, block)
-                    # Remove 'Grand Total'
                     df = df.loc[~df[df.columns[0]].astype(str).str.lower().str.contains("grand total")]
                     df = df.drop(columns=[col for col in df.columns if "grand total" in str(col).lower()], errors="ignore")
-                    if selected_norm and selected_norm in df.columns:
-                        keep_cols = [df.columns[0], selected_norm] + [
-                            col for col in df.columns if col != df.columns[0] and col != selected_norm and col not in norm_cols
-                        ]
-                        df = df[[c for c in keep_cols if c in df.columns]]
                     st.markdown(f'<div class="center-table"><h4 style="text-align:center">{block["label"]}{(" (" + selected_norm + ")") if selected_norm else ""}</h4>', unsafe_allow_html=True)
                     show_centered_dataframe(df)
                     st.markdown('</div>', unsafe_allow_html=True)
                     plot_horizontal_bar_plotly(df, key=f"cut_{block['label']}_plot", colorway="plotly")
                     st.markdown("---")
     except Exception as e:
-        st.error(f"Could not load individual survey report: {e}")
-        
+        st.error(f"Could not load individual survey report: {e}")        
+
 def nilambur_bypoll_dashboard(gc):
     st.markdown('<div class="section-header">Nilambur Bypoll Survey</div>', unsafe_allow_html=True)
     selected_file = select_gsheet_file(section="Nilambur Bypoll Survey")
