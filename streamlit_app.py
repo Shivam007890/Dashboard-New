@@ -161,19 +161,18 @@ def show_centered_dataframe(df):
     '''
     html += '<table style="margin-left:auto;margin-right:auto;border-collapse:collapse;width:100%;">'
     html += '<thead><tr>'
-    html += f'<th style="border:1px solid #ddd;background:#f5f7fa;"></th>'
+    # Do NOT add a <th> for the index
     for col in df.columns:
         html += f'<th style="border:1px solid #ddd;background:#f5f7fa;">{col}</th>'
     html += '</tr></thead><tbody>'
-    for idx, row in df.iterrows():
+    for _, row in df.iterrows():
         html += '<tr>'
-        html += f'<td style="border:1px solid #ddd;background:#f5f7fa;">{idx}</td>'
+        # Do NOT add a <td> for the index
         for cell in row:
             html += f'<td style="border:1px solid #ddd;">{cell if pd.notna(cell) else ""}</td>'
         html += '</tr>'
     html += '</tbody></table></div>'
-    st.markdown(html, unsafe_allow_html=True)
-    
+    st.markdown(html, unsafe_allow_html=True)    
 def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
     label_col = df.columns[0]
     df = df[~df[label_col].astype(str).str.lower().str.contains('difference')]
