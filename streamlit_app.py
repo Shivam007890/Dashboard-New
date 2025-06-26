@@ -239,8 +239,11 @@ def load_pivot_data_by_id(gc, file_id, worksheet_name):
     return data
 
 def comparative_dashboard(gc):
-    selected_file = select_gsheet_file(section="Periodic Popularity Poll Ticker")
+    # Always use Kerala_Survey_Comparative
+    files = get_gsheet_metadata(GOOGLE_DRIVE_OUTPUT_FOLDER)
+    selected_file = next((f for f in files if f["name"] == "Kerala_Survey_Comparative"), None)
     if not selected_file:
+        st.warning("Kerala_Survey_Comparative sheet not found!")
         return
 
     try:
@@ -267,39 +270,71 @@ def comparative_dashboard(gc):
         available_norms = sorted({t['norm'] for t in tab_infos if t['question'] == selected_question})
         selected_norm = st.selectbox("Select Normalisation", available_norms)
 
-        tab_entry = next((t for t in tab_infos if t['question'] == selected_question and t['norm'] == selected_norm), None)
-        if not tab_entry:
-            st.warning("No matching sheet found.")
+        # Gather all months' data for the question/norm
+        relevant_tabs = [t for t in tab_infos if t['question'] == selected_question and t['norm'] == selected_norm]
+        all_data = []
+        for tab_entry in relevant_tabs:
+            data = load_pivot_data_by_id(gc, selected_file['id'], tab_entry['tab'])
+            blocks = find_cuts_and_blocks(data)
+            if not blocks:
+                continue
+            block = blocks[0]
+            df = extract_block_df(data, block)
+            # Remove rows and columns with Grand Total / Sample Count
+            df = df.loc[~df[df.columns[0]].str.lower().str.contains("grand total|sample count")]
+            df = df.drop(columns=[col for col in df.columns if "grand total" in str(col).lower() or "sample" in str(col).lower()], errors="ignore")
+            # Add Month info if present as a column, else from tab name
+            if "Month" not in df.columns and "month" not in df.columns:
+                # Try to infer month from tab name or add a dummy
+                month = tab_entry['tab'].split()[-3].replace("-", "_") if len(tab_entry['tab'].split()) > 2 else ""
+                df.insert(0, "Month", month)
+            all_data.append(df)
+        if not all_data:
+            st.warning("No data found for this question/norm.")
             return
-
-        data = load_pivot_data_by_id(gc, selected_file['id'], tab_entry['tab'])
-        blocks = find_cuts_and_blocks(data)
-        if not blocks:
-            st.warning("No data blocks found in this sheet.")
-            return
-        block = blocks[0]
-        df = extract_block_df(data, block)
-
-        # Filter out rows containing 'Grand Total' or 'Sample Count' (case insensitive)
-        df = df[~df[df.columns[0]].str.lower().str.contains("grand total|sample count")]
+        # Concatenate all months' data
+        df_final = pd.concat(all_data, ignore_index=True)
+        # Remove duplicates if any
+        df_final = df_final.loc[:, ~df_final.columns.duplicated()]
+        # Reorder columns: Month first, then parties/candidates
+        cols = list(df_final.columns)
+        if "Month" in cols:
+            cols = ["Month"] + [c for c in cols if c != "Month"]
+        df_final = df_final[cols]
 
         st.markdown('<div class="center-table">', unsafe_allow_html=True)
         st.markdown(
             f"<h4 style='text-align: center; color: #22356f;'>{selected_question} ({selected_norm})</h4>",
             unsafe_allow_html=True
         )
-        show_centered_dataframe(df)
+        show_centered_dataframe(df_final)
         st.markdown('</div>', unsafe_allow_html=True)
 
-        x_col = df.columns[0]
-        value_cols = [c for c in df.columns[1:] if df[c].apply(lambda v: str(v).replace('.','',1).replace('-','',1).replace('%','').isdigit()).any()]
-        for col in value_cols:
-            df[col] = df[col].astype(str).str.replace('%','').astype(float)
-        if value_cols:
-            fig = px.bar(df, y=x_col, x=value_cols[0], orientation='h', text=value_cols[0], color=x_col)
-            st.plotly_chart(fig, use_container_width=True)
-        csv = df.to_csv(index=False).encode('utf-8')
-        st.download_button("Download CSV", csv, f"{tab_entry['tab']}_comparative.csv", "text/csv")
+        # Prepare data for line chart
+        parties = [c for c in df_final.columns if c not in ["Month", ""]]
+        plot_df = df_final.copy()
+        # Remove % symbol and convert to float
+        for party in parties:
+            plot_df[party] = plot_df[party].astype(str).str.replace('%','').astype(float)
+        # Melt for line chart
+        plot_df = plot_df.melt(id_vars="Month", value_vars=parties, var_name="Party", value_name="Value")
+        fig = px.line(
+            plot_df,
+            x="Month",
+            y="Value",
+            color="Party",
+            markers=True,
+            labels={"Value": "Percentage", "Month": "Month"},
+        )
+        fig.update_layout(
+            title="Trend by Month",
+            plot_bgcolor="#f5f7fa",
+            paper_bgcolor="#f5f7fa",
+            legend_title="Party/Candidate"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        csv = df_final.to_csv(index=False).encode('utf-8')
+        st.download_button("Download CSV", csv, f"{selected_question}_{selected_norm}_comparative.csv", "text/csv")
         st.markdown("---")
 
     except Exception as e:
