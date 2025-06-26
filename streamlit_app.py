@@ -151,7 +151,14 @@ def extract_block_df(data, block):
 
 def show_centered_dataframe(df):
     html = '<div style="overflow-x:auto">'
-    html += '<style>th, td { text-align:center !important; }</style>'
+    html += '''
+    <style>
+    th, td { 
+        text-align:center !important; 
+        font-size: 48px !important; 
+    }
+    </style>
+    '''
     html += '<table style="margin-left:auto;margin-right:auto;border-collapse:collapse;width:100%;">'
     html += '<thead><tr>'
     html += f'<th style="border:1px solid #ddd;background:#f5f7fa;"></th>'
@@ -166,7 +173,7 @@ def show_centered_dataframe(df):
         html += '</tr>'
     html += '</tbody></table></div>'
     st.markdown(html, unsafe_allow_html=True)
-
+    
 def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
     label_col = df.columns[0]
     df = df[~df[label_col].astype(str).str.lower().str.contains('difference')]
