@@ -8,7 +8,6 @@ import tempfile
 import plotly.express as px
 import base64
 from googleapiclient.discovery import build
-from streamlit.components.v1 import html
 
 GOOGLE_DRIVE_OUTPUT_FOLDER = "Kerala Survey Report Output"
 USERS = {"admin": "adminpass", "shivam": "shivampass", "analyst": "analyst2024"}
@@ -251,33 +250,11 @@ def load_pivot_data_by_id(gc, file_id, worksheet_name):
     data = ws.get_all_values()
     return data
 
-def download_dashboard_as_pdf():
-    st.markdown("""
-    <hr>
-    <h4>Download Dashboard as PDF</h4>
-    <small>You can save the full dashboard as a PDF (with pages automatically divided) by clicking below.<br>
-    <b>Note:</b> This may not work on all browsers or for extremely long dashboards.<br>
-    For best results, use Chrome or Edge. </small>
-    """, unsafe_allow_html=True)
-    html_string = """
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-    <button style="padding:8px 24px; font-size:18px; margin:10px 0;" onclick="printPDF()">Download PDF</button>
-    <script>
-    function printPDF() {
-      var element = document.querySelector('section.main');
-      var opt = {
-        margin:       [0.5, 0.5, 0.5, 0.5],
-        filename:     'kerala-survey-dashboard.pdf',
-        image:        { type: 'jpeg', quality: 0.98 },
-        html2canvas:  { scale: 2 },
-        jsPDF:        { unit: 'in', format: 'a4', orientation: 'landscape' },
-        pagebreak:    { mode: ['avoid-all', 'css', 'legacy'] }
-      };
-      html2pdf().set(opt).from(element).save();
-    }
-    </script>
-    """
-    html(html_string, height=100)
+def download_dashboard_info():
+    st.info(
+        "To download the dashboard as a PDF, use your browser's Print function (Ctrl+P or Cmd+P), then choose 'Save as PDF'.\n"
+        "For best results, use Chrome or Edge and select Landscape orientation."
+    )
 
 def comparative_dashboard(gc):
     files = get_gsheet_metadata(GOOGLE_DRIVE_OUTPUT_FOLDER)
@@ -345,7 +322,7 @@ def comparative_dashboard(gc):
         plot_trend_by_party(df_final, key="comparative_trend_party", show_margin_calculator=True)
         csv = df_final.to_csv(index=False).encode('utf-8')
         st.download_button("Download CSV", csv, f"{selected_question}_{selected_norm}_comparative.csv", "text/csv")
-        download_dashboard_as_pdf()
+        download_dashboard_info()
         st.markdown("---")
 
     except Exception as e:
@@ -423,7 +400,7 @@ def Stratified_dashboard(gc):
         show_centered_dataframe(df)
         st.markdown('</div>', unsafe_allow_html=True)
         plot_trend_by_party(df, key="stratified_trend_party", show_margin_calculator=False)
-        download_dashboard_as_pdf()
+        download_dashboard_info()
         st.markdown("---")
 
         geo_sections = [("District", "District"), ("Zone", "Zone"), ("Region", "Region"), ("AC", "Assembly Constituency")]
