@@ -12,7 +12,6 @@ from googleapiclient.discovery import build
 GOOGLE_DRIVE_OUTPUT_FOLDER = "Kerala Survey Report Output"
 USERS = {"admin": "adminpass", "shivam": "shivampass", "analyst": "analyst2024"}
 
-# Credentials and gspread client
 @st.cache_resource
 def get_gspread_client_and_creds():
     scopes = [
@@ -29,7 +28,6 @@ def get_gspread_client_and_creds():
     os.unlink(temp_file_path)
     return gc, credentials
 
-# Debug: List Google Sheets files in a folder
 def list_gsheet_files_in_folder(credentials, folder_name):
     try:
         drive_service = build('drive', 'v3', credentials=credentials)
@@ -51,7 +49,6 @@ def list_gsheet_files_in_folder(credentials, folder_name):
         st.error(f"Google Drive API error: {e}")
         return []
 
-# Remove caching for debugging (add back @st.cache_data after debugging)
 def get_gsheet_metadata(folder_name):
     _, credentials = get_gspread_client_and_creds()
     return list_gsheet_files_in_folder(credentials, folder_name)
@@ -241,6 +238,73 @@ def load_pivot_data_by_id(gc, file_id, worksheet_name):
     data = ws.get_all_values()
     return data
 
+def comparative_dashboard(gc):
+    selected_file = select_gsheet_file(section="Periodic Popularity Poll Ticker")
+    if not selected_file:
+        return
+
+    try:
+        all_ws = gc.open_by_key(selected_file['id']).worksheets()
+        tab_infos = []
+        for ws in all_ws:
+            name = ws.title
+            # Parse pattern: [QUESTION] ([NORM]) - Comparative
+            if name.endswith("- Comparative") and "(" in name and ")" in name:
+                q_part = name[:name.rfind("(")].strip()
+                norm_part = name[name.rfind("(")+1:name.rfind(")")].strip()
+                tab_infos.append({
+                    "tab": ws.title,
+                    "question": q_part,
+                    "norm": norm_part
+                })
+        if not tab_infos:
+            st.warning("No comparative analysis tabs found in this workbook.")
+            return
+
+        question_options = sorted({t['question'] for t in tab_infos})
+        selected_question = st.selectbox("Select Question", question_options)
+
+        available_norms = sorted({t['norm'] for t in tab_infos if t['question'] == selected_question})
+        selected_norm = st.selectbox("Select Normalisation", available_norms)
+
+        tab_entry = next((t for t in tab_infos if t['question'] == selected_question and t['norm'] == selected_norm), None)
+        if not tab_entry:
+            st.warning("No matching sheet found.")
+            return
+
+        data = load_pivot_data_by_id(gc, selected_file['id'], tab_entry['tab'])
+        blocks = find_cuts_and_blocks(data)
+        if not blocks:
+            st.warning("No data blocks found in this sheet.")
+            return
+        block = blocks[0]
+        df = extract_block_df(data, block)
+
+        # Filter out rows containing 'Grand Total' or 'Sample Count' (case insensitive)
+        df = df[~df[df.columns[0]].str.lower().str.contains("grand total|sample count")]
+
+        st.markdown('<div class="center-table">', unsafe_allow_html=True)
+        st.markdown(
+            f"<h4 style='text-align: center; color: #22356f;'>{selected_question} ({selected_norm})</h4>",
+            unsafe_allow_html=True
+        )
+        show_centered_dataframe(df)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        x_col = df.columns[0]
+        value_cols = [c for c in df.columns[1:] if df[c].apply(lambda v: str(v).replace('.','',1).replace('-','',1).replace('%','').isdigit()).any()]
+        for col in value_cols:
+            df[col] = df[col].astype(str).str.replace('%','').astype(float)
+        if value_cols:
+            fig = px.bar(df, y=x_col, x=value_cols[0], orientation='h', text=value_cols[0], color=x_col)
+            st.plotly_chart(fig, use_container_width=True)
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.download_button("Download CSV", csv, f"{tab_entry['tab']}_comparative.csv", "text/csv")
+        st.markdown("---")
+
+    except Exception as e:
+        st.error(f"Could not load comparative analysis: {e}")
+
 def individual_dashboard(gc):
     st.markdown('<div class="section-header">Individual Survey Reports</div>', unsafe_allow_html=True)
     selected_file = select_gsheet_file(section="Individual Survey Reports")
@@ -346,60 +410,6 @@ def individual_dashboard(gc):
                     st.markdown("---")
     except Exception as e:
         st.error(f"Could not load individual survey report: {e}")
-
-def comparative_dashboard(gc):
-    selected_file = select_gsheet_file(section="Periodic Popularity Poll Ticker")
-    if not selected_file:
-        return
-    try:
-        all_ws = gc.open_by_key(selected_file['id']).worksheets()
-        comparative_sheets = [ws.title for ws in all_ws if ws.title.lower().startswith("comp_") or ws.title.lower().startswith("comparative analysis")]
-        if not comparative_sheets:
-            st.warning("No comparative analysis sheets found.")
-            return
-        sorted_sheets = sorted(comparative_sheets)
-        def clean_comp_name(s):
-            if s.lower().startswith("comp_"):
-                return s[5:]
-            return s
-        question_labels = [clean_comp_name(s) for s in sorted_sheets]
-        selected_idx = st.selectbox("Select Question for Comparative Analysis", list(range(len(question_labels))), format_func=lambda i: question_labels[i])
-        selected_sheet = sorted_sheets[selected_idx]
-        data = load_pivot_data_by_id(gc, selected_file['id'], selected_sheet)
-        blocks = find_cuts_and_blocks(data)
-        if not blocks:
-            st.warning("No data blocks found in this sheet.")
-            return
-        block = blocks[0]
-        df = extract_block_df(data, block)
-        st.markdown('<div class="center-table">', unsafe_allow_html=True)
-        st.markdown("<h4 style='text-align: center; color: #22356f;'>Comparative Results</h4>", unsafe_allow_html=True)
-        show_centered_dataframe(df)
-        st.markdown('</div>', unsafe_allow_html=True)
-        x_col = df.columns[0]
-        exclude_keywords = ['sample', 'total', 'count', 'grand', 'diff', 'difference']
-        y_cols = [
-            col for col in df.columns[1:]
-            if not any(word in col.strip().lower() for word in exclude_keywords)
-            and df[col].apply(lambda x: str(x).replace('.', '', 1).replace('-', '', 1).replace('%', '').isdigit()).any()
-        ]
-        for col in y_cols:
-            df[col] = df[col].astype(str).str.replace('%','').astype(float)
-        fig = px.line(df, x=x_col, y=y_cols, markers=True)
-        fig.update_layout(
-            title="Popularity Poll Trend",
-            xaxis_title=x_col,
-            yaxis_title="Percentage",
-            plot_bgcolor="#f5f7fa",
-            paper_bgcolor="#f5f7fa",
-            legend_title="Party/Candidate"
-        )
-        st.plotly_chart(fig, use_container_width=True)
-        csv = df.to_csv(index=False).encode('utf-8')
-        st.download_button("Download CSV", csv, f"{selected_sheet}_comparative.csv", "text/csv")
-        st.markdown("---")
-    except Exception as e:
-        st.error(f"Could not load comparative analysis: {e}")
 
 def nilambur_bypoll_dashboard(gc):
     st.markdown('<div class="section-header">Nilambur Bypoll Survey</div>', unsafe_allow_html=True)
