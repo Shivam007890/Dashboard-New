@@ -172,6 +172,58 @@ def show_centered_dataframe(df):
     html += '</tbody></table></div>'
     st.markdown(html, unsafe_allow_html=True)
 
+def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
+    label_col = df.columns[0]
+    df = df[~df[label_col].astype(str).str.lower().str.contains('difference')]
+    exclude_keywords = ['sample', 'total', 'grand']
+    value_cols = [col for col in df.columns[1:] if not any(k in col.strip().lower() for k in exclude_keywords)]
+    if colorway == "plotly":
+        colors = px.colors.qualitative.Plotly
+    else:
+        colors = [
+            "#1976d2", "#fdbb2d", "#22356f", "#7b1fa2", "#0288d1", "#c2185b",
+            "#ffb300", "#388e3c", "#8d6e63"
+        ]
+    n_bars = df.shape[0] if len(value_cols) == 1 else len(value_cols)
+    colors = colors * ((n_bars // len(colors)) + 1)
+    for col in value_cols:
+        try:
+            df[col] = df[col].astype(str).str.replace('%', '', regex=False).astype(float)
+        except Exception:
+            continue
+    if not value_cols:
+        st.warning("No suitable value columns to plot.")
+        return
+    if len(value_cols) == 1:
+        value_col = value_cols[0]
+        fig = px.bar(
+            df, y=label_col, x=value_col, orientation='h', text=value_col,
+            color=label_col,
+            color_discrete_sequence=colors
+        )
+        fig.update_layout(
+            title=f"Distribution by {label_col}",
+            xaxis_title=value_col, yaxis_title=label_col,
+            showlegend=False, bargap=0.2,
+            plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa"
+        )
+        fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
+    else:
+        long_df = df.melt(id_vars=label_col, value_vars=value_cols, var_name='Category', value_name='Value')
+        fig = px.bar(
+            long_df, y=label_col, x='Value', color='Category',
+            orientation='h', barmode='group', text='Value',
+            color_discrete_sequence=colors
+        )
+        fig.update_layout(
+            title=f"Distribution by {label_col}",
+            xaxis_title='Value', yaxis_title=label_col,
+            bargap=0.2, legend_title="Category",
+            plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa"
+        )
+        fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
+    st.plotly_chart(fig, use_container_width=True, key=key)
+
 def plot_trend_by_party(df, key=None, show_margin_calculator=True):
     party_colors = {
         "BJP": "#ff6d01",
@@ -399,7 +451,7 @@ def Stratified_dashboard(gc):
         st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_block_label}{(" (" + selected_norm + ")") if selected_norm else ""}</h4>', unsafe_allow_html=True)
         show_centered_dataframe(df)
         st.markdown('</div>', unsafe_allow_html=True)
-        plot_trend_by_party(df, key="stratified_trend_party", show_margin_calculator=False)
+        plot_horizontal_bar_plotly(df, key="stratified_horizontal_bar")
         download_dashboard_info()
         st.markdown("---")
 
@@ -433,7 +485,7 @@ def Stratified_dashboard(gc):
                 st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_block_label}{(" (" + selected_norm + ")") if selected_norm else ""}</h4>', unsafe_allow_html=True)
                 show_centered_dataframe(filtered_df)
                 st.markdown('</div>', unsafe_allow_html=True)
-                plot_trend_by_party(filtered_df, key=f"{block_prefix}_{selected_block_label}_geo_trend_party", show_margin_calculator=False)
+                plot_horizontal_bar_plotly(filtered_df, key=f"{block_prefix}_{selected_block_label}_geo_horizontal_bar")
         cut_labels = ["Religion", "Gender", "Age", "Community"]
         other_cuts = [b for b in blocks if any(cl.lower() == b["label"].lower() for cl in cut_labels)]
         if other_cuts:
@@ -445,7 +497,7 @@ def Stratified_dashboard(gc):
                     st.markdown(f'<div class="center-table"><h4 style="text-align:center">{block["label"]}{(" (" + selected_norm + ")") if selected_norm else ""}</h4>', unsafe_allow_html=True)
                     show_centered_dataframe(df)
                     st.markdown('</div>', unsafe_allow_html=True)
-                    plot_trend_by_party(df, key=f"cut_{block['label']}_trend_party", show_margin_calculator=False)
+                    plot_horizontal_bar_plotly(df, key=f"cut_{block['label']}_horizontal_bar")
                     st.markdown("---")
     except Exception as e:
         st.error(f"Could not load Stratified survey report: {e}")
