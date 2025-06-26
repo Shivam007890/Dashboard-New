@@ -380,8 +380,26 @@ def individual_dashboard(gc):
             return
 
         # Main summary report dropdown
-        block_labels = [b["label"] for b in blocks]
-        selected_block_label = st.selectbox("Select Summary Report", block_labels)
+def is_state_summary(label):
+    label_lower = label.strip().lower()
+    if label_lower.startswith('state'):
+        # Allow only up to 'state + community summary'
+        allowed = [
+            'state summary',
+            'state + religion summary',
+            'state + gender summary',
+            'state + age summary',
+            'state + community summary'
+        ]
+        return any(label_lower.startswith(a) for a in allowed)
+    return False
+
+state_block_labels = [b["label"] for b in blocks if is_state_summary(b["label"])]
+if not state_block_labels:
+    st.warning("No State Summary blocks found.")
+    return
+selected_block_label = st.selectbox("Select Summary Report", state_block_labels)
+
         selected_block = next(b for b in blocks if b["label"] == selected_block_label)
         df = extract_block_df(data, selected_block)
         # Remove 'Grand Total' row(s) and column(s)
