@@ -174,7 +174,7 @@ def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
     st.plotly_chart(fig, use_container_width=True, key=key)
 
 @st.cache_resource
-def get_gspread_client():
+def get_gspread_client_and_creds():
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
@@ -187,11 +187,10 @@ def get_gspread_client():
     credentials = Credentials.from_service_account_file(temp_file_path, scopes=scopes)
     gc = gspread.authorize(credentials)
     os.unlink(temp_file_path)
-    return gc
+    return gc, credentials
 
-def list_gsheet_files_in_folder(gc, folder_name):
-    creds = gc.auth
-    drive_service = build('drive', 'v3', credentials=creds)
+def list_gsheet_files_in_folder(credentials, folder_name):
+    drive_service = build('drive', 'v3', credentials=credentials)
     folders = drive_service.files().list(
         q=f"mimeType='application/vnd.google-apps.folder' and name='{folder_name}'",
         fields="files(id, name)").execute().get('files', [])
@@ -206,10 +205,10 @@ def list_gsheet_files_in_folder(gc, folder_name):
 
 @st.cache_data
 def get_gsheet_metadata(folder_name):
-    gc = get_gspread_client()
-    return list_gsheet_files_in_folder(gc, folder_name)
+    _, credentials = get_gspread_client_and_creds()
+    return list_gsheet_files_in_folder(credentials, folder_name)
 
-def select_gsheet_file(gc, section="Individual Survey Reports"):
+def select_gsheet_file(section="Individual Survey Reports"):
     files = get_gsheet_metadata(GOOGLE_DRIVE_OUTPUT_FOLDER)
     if not files:
         st.warning("No Google Sheets files found in the output folder.")
@@ -227,15 +226,15 @@ def select_gsheet_file(gc, section="Individual Survey Reports"):
     selected_file = next(f for f in files if f['name'] == file_label)
     return selected_file
 
-def load_pivot_data_by_id(_gc, file_id, worksheet_name):
-    sh = _gc.open_by_key(file_id)
+def load_pivot_data_by_id(gc, file_id, worksheet_name):
+    sh = gc.open_by_key(file_id)
     ws = sh.worksheet(worksheet_name)
     data = ws.get_all_values()
     return data
 
 def individual_dashboard(gc):
     st.markdown('<div class="section-header">Individual Survey Reports</div>', unsafe_allow_html=True)
-    selected_file = select_gsheet_file(gc, section="Individual Survey Reports")
+    selected_file = select_gsheet_file(section="Individual Survey Reports")
     if not selected_file:
         return
     try:
@@ -340,7 +339,7 @@ def individual_dashboard(gc):
         st.error(f"Could not load individual survey report: {e}")
 
 def comparative_dashboard(gc):
-    selected_file = select_gsheet_file(gc, section="Periodic Popularity Poll Ticker")
+    selected_file = select_gsheet_file(section="Periodic Popularity Poll Ticker")
     if not selected_file:
         return
     try:
@@ -395,7 +394,7 @@ def comparative_dashboard(gc):
 
 def nilambur_bypoll_dashboard(gc):
     st.markdown('<div class="section-header">Nilambur Bypoll Survey</div>', unsafe_allow_html=True)
-    selected_file = select_gsheet_file(gc, section="Nilambur Bypoll Survey")
+    selected_file = select_gsheet_file(section="Nilambur Bypoll Survey")
     if not selected_file:
         st.info("No Nilambur bypoll file found.")
         return
@@ -537,5 +536,5 @@ if __name__ == "__main__":
     if sidebar_menu == "Set/Change Password":
         password_setup_form()
         st.stop()
-    gc = get_gspread_client()
+    gc, _ = get_gspread_client_and_creds()
     main_dashboard(gc)
