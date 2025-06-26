@@ -355,9 +355,14 @@ def individual_dashboard(gc):
 
     try:
         all_ws = gc.open_by_key(selected_file['id']).worksheets()
-        # Parse question/norm from tab name: [QUESTION] - [NORM]
+        # Exclude generic/data sheets
+        EXCLUDED_SHEET_NAMES = ['sheet1', 'sheet', 'data', 'instruction', 'test']
         question_norms = []
         for ws in all_ws:
+            sheet_name = ws.title.strip().lower()
+            if sheet_name in EXCLUDED_SHEET_NAMES:
+                continue
+            # Parse as [QUESTION] - [NORM] or just [QUESTION]
             if '-' in ws.title:
                 q, norm = ws.title.split('-', 1)
                 question_norms.append((q.strip(), norm.strip(), ws.title))
@@ -448,8 +453,8 @@ def individual_dashboard(gc):
                     plot_horizontal_bar_plotly(df, key=f"cut_{block['label']}_plot", colorway="plotly")
                     st.markdown("---")
     except Exception as e:
-        st.error(f"Could not load individual survey report: {e}")        
-
+        st.error(f"Could not load individual survey report: {e}")
+        
 def nilambur_bypoll_dashboard(gc):
     st.markdown('<div class="section-header">Nilambur Bypoll Survey</div>', unsafe_allow_html=True)
     selected_file = select_gsheet_file(section="Nilambur Bypoll Survey")
