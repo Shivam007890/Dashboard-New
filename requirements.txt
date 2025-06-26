@@ -4,3 +4,4 @@ gspread
 google-auth
 plotly
 fpdf
+google-api-python-client
