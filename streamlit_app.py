@@ -12,6 +12,12 @@ from googleapiclient.discovery import build
 GOOGLE_DRIVE_OUTPUT_FOLDER = "Kerala Survey Report Output"
 USERS = {"admin": "adminpass", "shivam": "shivampass", "analyst": "analyst2024"}
 
+PARTY_COLORS = {
+    "BJP": "#ff6d01",
+    "UDF": "#4285f4",
+    "LDF": "#db261d"
+}
+
 @st.cache_resource
 def get_gspread_client_and_creds():
     scopes = [
@@ -172,18 +178,16 @@ def show_centered_dataframe(df):
     html += '</tbody></table></div>'
     st.markdown(html, unsafe_allow_html=True)
 
-def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
+def plot_horizontal_bar_plotly(df, key=None):
     label_col = df.columns[0]
     df = df[~df[label_col].astype(str).str.lower().str.contains('difference')]
     exclude_keywords = ['sample', 'total', 'grand']
     value_cols = [col for col in df.columns[1:] if not any(k in col.strip().lower() for k in exclude_keywords)]
-    if colorway == "plotly":
-        colors = px.colors.qualitative.Plotly
-    else:
-        colors = [
-            "#1976d2", "#fdbb2d", "#22356f", "#7b1fa2", "#0288d1", "#c2185b",
-            "#ffb300", "#388e3c", "#8d6e63"
-        ]
+    # Assign party colors if match, otherwise use plotly default
+    color_map = []
+    for col in value_cols:
+        color_map.append(PARTY_COLORS.get(col, None))
+    colors = [c for c in color_map if c] + px.colors.qualitative.Plotly
     n_bars = df.shape[0] if len(value_cols) == 1 else len(value_cols)
     colors = colors * ((n_bars // len(colors)) + 1)
     for col in value_cols:
@@ -210,10 +214,12 @@ def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
         fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     else:
         long_df = df.melt(id_vars=label_col, value_vars=value_cols, var_name='Category', value_name='Value')
+        # Map party colors to Category column
+        color_discrete_map = {cat: PARTY_COLORS.get(cat, None) for cat in long_df['Category'].unique()}
         fig = px.bar(
             long_df, y=label_col, x='Value', color='Category',
             orientation='h', barmode='group', text='Value',
-            color_discrete_sequence=colors
+            color_discrete_map=color_discrete_map
         )
         fig.update_layout(
             title=f"Distribution by {label_col}",
@@ -302,12 +308,6 @@ def load_pivot_data_by_id(gc, file_id, worksheet_name):
     data = ws.get_all_values()
     return data
 
-def download_dashboard_info():
-    st.info(
-        "To download the dashboard as a PDF, use your browser's Print function (Ctrl+P or Cmd+P), then choose 'Save as PDF'.\n"
-        "For best results, use Chrome or Edge and select Landscape orientation."
-    )
-
 def comparative_dashboard(gc):
     files = get_gsheet_metadata(GOOGLE_DRIVE_OUTPUT_FOLDER)
     selected_file = next((f for f in files if f["name"] == "Kerala_Survey_Comparative"), None)
@@ -374,7 +374,6 @@ def comparative_dashboard(gc):
         plot_trend_by_party(df_final, key="comparative_trend_party", show_margin_calculator=True)
         csv = df_final.to_csv(index=False).encode('utf-8')
         st.download_button("Download CSV", csv, f"{selected_question}_{selected_norm}_comparative.csv", "text/csv")
-        download_dashboard_info()
         st.markdown("---")
 
     except Exception as e:
@@ -452,7 +451,6 @@ def Stratified_dashboard(gc):
         show_centered_dataframe(df)
         st.markdown('</div>', unsafe_allow_html=True)
         plot_horizontal_bar_plotly(df, key="stratified_horizontal_bar")
-        download_dashboard_info()
         st.markdown("---")
 
         geo_sections = [("District", "District"), ("Zone", "Zone"), ("Region", "Region"), ("AC", "Assembly Constituency")]
