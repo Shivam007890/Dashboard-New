@@ -12,6 +12,64 @@ from googleapiclient.discovery import build
 GOOGLE_DRIVE_OUTPUT_FOLDER = "Kerala Survey Report Output"
 USERS = {"admin": "adminpass", "shivam": "shivampass", "analyst": "analyst2024"}
 
+# --- Helper: gspread and credentials ---
+@st.cache_resource
+def get_gspread_client_and_creds():
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    credentials_json = os.getenv("GOOGLE_CREDENTIALS_JSON") if "GOOGLE_CREDENTIALS_JSON" in os.environ else st.secrets["GOOGLE_CREDENTIALS_JSON"]
+    credentials_dict = json.loads(credentials_json)
+    with tempfile.NamedTemporaryFile(mode='w+', suffix='.json', delete=False) as temp_file:
+        json.dump(credentials_dict, temp_file)
+        temp_file_path = temp_file.name
+    credentials = Credentials.from_service_account_file(temp_file_path, scopes=scopes)
+    gc = gspread.authorize(credentials)
+    os.unlink(temp_file_path)
+    return gc, credentials
+
+# --- Debug-Ready Google Drive Sheet Listing ---
+def list_gsheet_files_in_folder(credentials, folder_name):
+    drive_service = build('drive', 'v3', credentials=credentials)
+    folders = drive_service.files().list(
+        q=f"mimeType='application/vnd.google-apps.folder' and name='{folder_name}'",
+        fields="files(id, name)").execute().get('files', [])
+    st.write("DEBUG: Folders found:", folders)
+    if not folders:
+        st.warning(f"Folder '{folder_name}' not found or not shared with the service account.")
+        return []
+    folder_id = folders[0]['id']
+    results = drive_service.files().list(
+        q=f"mimeType='application/vnd.google-apps.spreadsheet' and '{folder_id}' in parents",
+        fields="files(id, name, parents)").execute()
+    files = results.get('files', [])
+    st.write("DEBUG: Files found in folder:", files)
+    return files
+
+@st.cache_data
+def get_gsheet_metadata(folder_name):
+    _, credentials = get_gspread_client_and_creds()
+    return list_gsheet_files_in_folder(credentials, folder_name)
+
+def select_gsheet_file(section="Individual Survey Reports"):
+    files = get_gsheet_metadata(GOOGLE_DRIVE_OUTPUT_FOLDER)
+    if not files:
+        st.warning("No Google Sheets files found in the output folder.")
+        return None
+    if section == "Individual Survey Reports":
+        files = [f for f in files if f['name'].startswith("Kerala_Survey_") and not "Comparative" in f['name']]
+    elif section == "Periodic Popularity Poll Ticker":
+        files = [f for f in files if "Comparative" in f['name']]
+    elif section == "Nilambur Bypoll Survey":
+        files = [f for f in files if "Nilambur" in f['name']]
+    if not files:
+        st.warning(f"No files found for section '{section}'.")
+        return None
+    file_label = st.selectbox(f"Select file for {section}", [f['name'] for f in files])
+    selected_file = next(f for f in files if f['name'] == file_label)
+    return selected_file
+
 def is_question_sheet(ws):
     name = ws.title.strip().lower()
     if hasattr(ws, 'hidden') and ws.hidden:
@@ -172,59 +230,6 @@ def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
         )
         fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     st.plotly_chart(fig, use_container_width=True, key=key)
-
-@st.cache_resource
-def get_gspread_client_and_creds():
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
-    ]
-    credentials_json = os.getenv("GOOGLE_CREDENTIALS_JSON") if "GOOGLE_CREDENTIALS_JSON" in os.environ else st.secrets["GOOGLE_CREDENTIALS_JSON"]
-    credentials_dict = json.loads(credentials_json)
-    with tempfile.NamedTemporaryFile(mode='w+', suffix='.json', delete=False) as temp_file:
-        json.dump(credentials_dict, temp_file)
-        temp_file_path = temp_file.name
-    credentials = Credentials.from_service_account_file(temp_file_path, scopes=scopes)
-    gc = gspread.authorize(credentials)
-    os.unlink(temp_file_path)
-    return gc, credentials
-
-def list_gsheet_files_in_folder(credentials, folder_name):
-    drive_service = build('drive', 'v3', credentials=credentials)
-    folders = drive_service.files().list(
-        q=f"mimeType='application/vnd.google-apps.folder' and name='{folder_name}'",
-        fields="files(id, name)").execute().get('files', [])
-    if not folders:
-        return []
-    folder_id = folders[0]['id']
-    results = drive_service.files().list(
-        q=f"mimeType='application/vnd.google-apps.spreadsheet' and '{folder_id}' in parents",
-        fields="files(id, name)").execute()
-    files = results.get('files', [])
-    return files
-
-@st.cache_data
-def get_gsheet_metadata(folder_name):
-    _, credentials = get_gspread_client_and_creds()
-    return list_gsheet_files_in_folder(credentials, folder_name)
-
-def select_gsheet_file(section="Individual Survey Reports"):
-    files = get_gsheet_metadata(GOOGLE_DRIVE_OUTPUT_FOLDER)
-    if not files:
-        st.warning("No Google Sheets files found in the output folder.")
-        return None
-    if section == "Individual Survey Reports":
-        files = [f for f in files if f['name'].startswith("Kerala_Survey_") and not "Comparative" in f['name']]
-    elif section == "Periodic Popularity Poll Ticker":
-        files = [f for f in files if "Comparative" in f['name']]
-    elif section == "Nilambur Bypoll Survey":
-        files = [f for f in files if "Nilambur" in f['name']]
-    if not files:
-        st.warning(f"No files found for section '{section}'.")
-        return None
-    file_label = st.selectbox(f"Select file for {section}", [f['name'] for f in files])
-    selected_file = next(f for f in files if f['name'] == file_label)
-    return selected_file
 
 def load_pivot_data_by_id(gc, file_id, worksheet_name):
     sh = gc.open_by_key(file_id)
