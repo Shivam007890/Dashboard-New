@@ -205,12 +205,14 @@ def list_gsheet_files_in_folder(gc, folder_name):
     files = results.get('files', [])
     return files
 
+# FIXED: Only cache on the folder name (not on gc, which is unhashable)
 @st.cache_data
-def get_gsheet_metadata(gc, folder_name):
+def get_gsheet_metadata(folder_name):
+    gc = get_gspread_client()
     return list_gsheet_files_in_folder(gc, folder_name)
 
 def select_gsheet_file(gc, section="Individual Survey Reports"):
-    files = get_gsheet_metadata(gc, GOOGLE_DRIVE_OUTPUT_FOLDER)
+    files = get_gsheet_metadata(GOOGLE_DRIVE_OUTPUT_FOLDER)
     if not files:
         st.warning("No Google Sheets files found in the output folder.")
         return None
@@ -219,7 +221,6 @@ def select_gsheet_file(gc, section="Individual Survey Reports"):
     elif section == "Periodic Popularity Poll Ticker":
         files = [f for f in files if "Comparative" in f['name']]
     elif section == "Nilambur Bypoll Survey":
-        # custom logic, e.g. filter for Nilambur-specific files
         files = [f for f in files if "Nilambur" in f['name']]
     if not files:
         st.warning(f"No files found for section '{section}'.")
