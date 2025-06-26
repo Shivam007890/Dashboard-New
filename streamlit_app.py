@@ -226,7 +226,6 @@ def load_pivot_data_by_id(gc, file_id, worksheet_name):
     return data
 
 def comparative_dashboard(gc):
-    # Always use Kerala_Survey_Comparative
     files = get_gsheet_metadata(GOOGLE_DRIVE_OUTPUT_FOLDER)
     selected_file = next((f for f in files if f["name"] == "Kerala_Survey_Comparative"), None)
     if not selected_file:
@@ -238,7 +237,6 @@ def comparative_dashboard(gc):
         tab_infos = []
         for ws in all_ws:
             name = ws.title
-            # Parse pattern: [QUESTION] ([NORM]) - Comparative
             if name.endswith("- Comparative") and "(" in name and ")" in name:
                 q_part = name[:name.rfind("(")].strip()
                 norm_part = name[name.rfind("(")+1:name.rfind(")")].strip()
@@ -257,7 +255,6 @@ def comparative_dashboard(gc):
         available_norms = sorted({t['norm'] for t in tab_infos if t['question'] == selected_question})
         selected_norm = st.selectbox("Select Normalisation", available_norms)
 
-        # Gather all months' data for the question/norm
         relevant_tabs = [t for t in tab_infos if t['question'] == selected_question and t['norm'] == selected_norm]
         all_data = []
         for tab_entry in relevant_tabs:
@@ -267,23 +264,17 @@ def comparative_dashboard(gc):
                 continue
             block = blocks[0]
             df = extract_block_df(data, block)
-            # Remove rows and columns with Grand Total / Sample Count
             df = df.loc[~df[df.columns[0]].str.lower().str.contains("grand total|sample count")]
             df = df.drop(columns=[col for col in df.columns if "grand total" in str(col).lower() or "sample" in str(col).lower()], errors="ignore")
-            # Add Month info if present as a column, else from tab name
             if "Month" not in df.columns and "month" not in df.columns:
-                # Try to infer month from tab name or add a dummy
                 month = tab_entry['tab'].split()[-3].replace("-", "_") if len(tab_entry['tab'].split()) > 2 else ""
                 df.insert(0, "Month", month)
             all_data.append(df)
         if not all_data:
             st.warning("No data found for this question/norm.")
             return
-        # Concatenate all months' data
         df_final = pd.concat(all_data, ignore_index=True)
-        # Remove duplicates if any
         df_final = df_final.loc[:, ~df_final.columns.duplicated()]
-        # Reorder columns: Month first, then parties/candidates
         cols = list(df_final.columns)
         if "Month" in cols:
             cols = ["Month"] + [c for c in cols if c != "Month"]
@@ -297,13 +288,10 @@ def comparative_dashboard(gc):
         show_centered_dataframe(df_final)
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # Prepare data for line chart
         parties = [c for c in df_final.columns if c not in ["Month", ""]]
         plot_df = df_final.copy()
-        # Remove % symbol and convert to float
         for party in parties:
             plot_df[party] = plot_df[party].astype(str).str.replace('%','').astype(float)
-        # Melt for line chart
         plot_df = plot_df.melt(id_vars="Month", value_vars=parties, var_name="Party", value_name="Value")
         fig = px.line(
             plot_df,
@@ -334,7 +322,6 @@ def Stratified_dashboard(gc):
     if not month_files:
         st.warning("No month-wise files found.")
         return
-    # Sort and prepare month dropdown
     month_files = sorted(month_files, key=lambda f: f['name'])
     month_options = [f['name'].replace("Kerala_Survey_", "").replace(".xlsx", "") for f in month_files]
     selected_month_idx = st.selectbox("Select Month", range(len(month_options)), format_func=lambda i: month_options[i])
@@ -342,14 +329,12 @@ def Stratified_dashboard(gc):
 
     try:
         all_ws = gc.open_by_key(selected_file['id']).worksheets()
-        # Exclude generic/data sheets
         EXCLUDED_SHEET_NAMES = ['sheet1', 'sheet', 'data', 'instruction', 'test']
         question_norms = []
         for ws in all_ws:
             sheet_name = ws.title.strip().lower()
             if sheet_name in EXCLUDED_SHEET_NAMES:
                 continue
-            # Parse as [QUESTION] - [NORM] or just [QUESTION]
             if '-' in ws.title:
                 q, norm = ws.title.split('-', 1)
                 question_norms.append((q.strip(), norm.strip(), ws.title))
@@ -360,14 +345,12 @@ def Stratified_dashboard(gc):
             return
         questions = sorted(list(set(q for q, norm, t in question_norms)))
         selected_question = st.selectbox("Select Question", questions)
-        # Norms for selected question
         available_norms = sorted(list(set(norm for q, norm, t in question_norms if q == selected_question and norm)))
         if available_norms:
             selected_norm = st.selectbox("Select Normalisation", available_norms)
         else:
             selected_norm = ""
             st.info("No normalisation found in question name.")
-        # Find worksheet for this selection
         selected_tab = next((t for q, norm, t in question_norms if q == selected_question and (norm == selected_norm or not available_norms)), None)
         if not selected_tab:
             st.warning("No matching worksheet found.")
@@ -379,30 +362,26 @@ def Stratified_dashboard(gc):
             st.warning("No summary report types found.")
             return
 
-        # Main summary report dropdown
-def is_state_summary(label):
-    label_lower = label.strip().lower()
-    if label_lower.startswith('state'):
-        # Allow only up to 'state + community summary'
-        allowed = [
-            'state summary',
-            'state + religion summary',
-            'state + gender summary',
-            'state + age summary',
-            'state + community summary'
-        ]
-        return any(label_lower.startswith(a) for a in allowed)
-    return False
+        # Only include State summaries up to State + Community Summary
+        def is_state_summary(label):
+            label_lower = label.strip().lower()
+            allowed = [
+                'state summary',
+                'state + religion summary',
+                'state + gender summary',
+                'state + age summary',
+                'state + community summary'
+            ]
+            return any(label_lower.startswith(a) for a in allowed)
 
-state_block_labels = [b["label"] for b in blocks if is_state_summary(b["label"])]
-if not state_block_labels:
-    st.warning("No State Summary blocks found.")
-    return
-selected_block_label = st.selectbox("Select Summary Report", state_block_labels)
+        state_block_labels = [b["label"] for b in blocks if is_state_summary(b["label"])]
+        if not state_block_labels:
+            st.warning("No State Summary blocks found.")
+            return
+        selected_block_label = st.selectbox("Select Summary Report", state_block_labels)
 
         selected_block = next(b for b in blocks if b["label"] == selected_block_label)
         df = extract_block_df(data, selected_block)
-        # Remove 'Grand Total' row(s) and column(s)
         df = df.loc[~df[df.columns[0]].astype(str).str.lower().str.contains("grand total")]
         df = df.drop(columns=[col for col in df.columns if "grand total" in str(col).lower()], errors="ignore")
         st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_block_label}{(" (" + selected_norm + ")") if selected_norm else ""}</h4>', unsafe_allow_html=True)
@@ -411,7 +390,6 @@ selected_block_label = st.selectbox("Select Summary Report", state_block_labels)
         plot_horizontal_bar_plotly(df, key=f"summary_{selected_block_label}_plot", colorway="plotly")
         st.markdown("---")
 
-        # Expandable "Geo" sections
         geo_sections = [("District", "District"), ("Zone", "Zone"), ("Region", "Region"), ("AC", "Assembly Constituency")]
         for block_prefix, geo_name in geo_sections:
             with st.expander(f"{geo_name} Wise Survey Reports ({block_prefix})", expanded=False):
@@ -443,7 +421,6 @@ selected_block_label = st.selectbox("Select Summary Report", state_block_labels)
                 show_centered_dataframe(filtered_df)
                 st.markdown('</div>', unsafe_allow_html=True)
                 plot_horizontal_bar_plotly(filtered_df, key=f"{block_prefix}_{selected_block_label}_geo_summary_plot", colorway="plotly")
-        # Other "cuts" sections like Religion, Gender, Age, Community
         cut_labels = ["Religion", "Gender", "Age", "Community"]
         other_cuts = [b for b in blocks if any(cl.lower() == b["label"].lower() for cl in cut_labels)]
         if other_cuts:
