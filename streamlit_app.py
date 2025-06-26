@@ -12,7 +12,7 @@ from googleapiclient.discovery import build
 GOOGLE_DRIVE_OUTPUT_FOLDER = "Kerala Survey Report Output"
 USERS = {"admin": "adminpass", "shivam": "shivampass", "analyst": "analyst2024"}
 
-# --- Helper: gspread and credentials ---
+# Credentials and gspread client
 @st.cache_resource
 def get_gspread_client_and_creds():
     scopes = [
@@ -29,25 +29,29 @@ def get_gspread_client_and_creds():
     os.unlink(temp_file_path)
     return gc, credentials
 
-# --- Debug-Ready Google Drive Sheet Listing ---
+# Debug: List Google Sheets files in a folder
 def list_gsheet_files_in_folder(credentials, folder_name):
-    drive_service = build('drive', 'v3', credentials=credentials)
-    folders = drive_service.files().list(
-        q=f"mimeType='application/vnd.google-apps.folder' and name='{folder_name}'",
-        fields="files(id, name)").execute().get('files', [])
-    st.write("DEBUG: Folders found:", folders)
-    if not folders:
-        st.warning(f"Folder '{folder_name}' not found or not shared with the service account.")
+    try:
+        drive_service = build('drive', 'v3', credentials=credentials)
+        folders = drive_service.files().list(
+            q=f"mimeType='application/vnd.google-apps.folder' and name='{folder_name}'",
+            fields="files(id, name)").execute().get('files', [])
+        st.write("DEBUG: Folders found:", folders)
+        if not folders:
+            st.warning(f"Folder '{folder_name}' not found or not shared with the service account.")
+            return []
+        folder_id = folders[0]['id']
+        results = drive_service.files().list(
+            q=f"mimeType='application/vnd.google-apps.spreadsheet' and '{folder_id}' in parents",
+            fields="files(id, name, parents)").execute()
+        files = results.get('files', [])
+        st.write("DEBUG: Files found in folder:", files)
+        return files
+    except Exception as e:
+        st.error(f"Google Drive API error: {e}")
         return []
-    folder_id = folders[0]['id']
-    results = drive_service.files().list(
-        q=f"mimeType='application/vnd.google-apps.spreadsheet' and '{folder_id}' in parents",
-        fields="files(id, name, parents)").execute()
-    files = results.get('files', [])
-    st.write("DEBUG: Files found in folder:", files)
-    return files
 
-@st.cache_data
+# Remove caching for debugging (add back @st.cache_data after debugging)
 def get_gsheet_metadata(folder_name):
     _, credentials = get_gspread_client_and_creds()
     return list_gsheet_files_in_folder(credentials, folder_name)
