@@ -155,7 +155,7 @@ def show_centered_dataframe(df):
     <style>
     th, td { 
         text-align:center !important; 
-        font-size: 48px !important; 
+        font-size: 30px !important; 
     }
     </style>
     '''
