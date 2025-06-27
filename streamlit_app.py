@@ -544,7 +544,7 @@ def password_setup_form():
 
 def main_dashboard(gc):
     st.markdown("<h1 class='dashboard-title' style='text-align:center;'>Kerala Survey Dashboard</h1>", unsafe_allow_html=True)
-    map_path = "kerala_political_map.png"
+    map_path = "kerala-vector-illustration.jpg"
     if os.path.exists(map_path):
         with open(map_path, "rb") as imgf:
             imgdata = base64.b64encode(imgf.read()).decode('utf-8')
