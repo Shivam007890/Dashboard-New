@@ -9,77 +9,14 @@ import plotly.express as px
 import base64
 from googleapiclient.discovery import build
 
-# ==== THEME COLORS ====
-BG_GRADIENT = "linear-gradient(90deg, #10B981 0%, #34D399 60%, #60A5FA 100%)"
-HEADER_BG = "#3B82F6"
-HEADER_TEXT = "#fff"
-ACCENT_BLUE = "#60A5FA"
-ACCENT_GREEN = "#34D399"
-TABLE_HEADER_BG = "#f5f7fa"
-TABLE_HEADER_TEXT = "#22356f"
-CHART_BG = "#F0FDF4"
-TEXT_COLOR = "#22356f"
-
-PARTY_COLORS = {
-    "BJP": "#F97316",
-    "UDF": "#10B981",
-    "LDF": "#EF4444"
-}
-
 GOOGLE_DRIVE_OUTPUT_FOLDER = "Kerala Survey Report Output"
 USERS = {"admin": "adminpass", "shivam": "shivampass", "analyst": "analyst2024"}
 
-# ==== Streamlit Custom Styling ====
-st.markdown(
-    f"""
-    <style>
-    .dashboard-title {{
-        background: {BG_GRADIENT};
-        color: {HEADER_TEXT};
-        padding: 1.3rem 0;
-        border-radius: 1rem;
-        margin-bottom: 2rem;
-        font-size: 2.5rem;
-        font-weight: 700;
-    }}
-    .section-header {{
-        background: {HEADER_BG};
-        color: {HEADER_TEXT};
-        padding: 0.6rem 1.2rem;
-        border-radius: 0.7rem;
-        margin: 1.5rem 0 1rem 0;
-        font-size: 1.3rem;
-        font-weight: 600;
-        letter-spacing: 1px;
-    }}
-    .center-table h4 {{
-        color: {ACCENT_BLUE};
-        text-align: center;
-        margin-bottom: 0.5rem;
-    }}
-    th {{
-        background: {TABLE_HEADER_BG} !important;
-        color: {TABLE_HEADER_TEXT} !important;
-        font-size: 1.1rem !important;
-    }}
-    .stDownloadButton > button {{
-        background: {BG_GRADIENT};
-        color: {HEADER_TEXT};
-        border: none;
-        border-radius: 0.5rem;
-        font-size: 1rem;
-        font-weight: 600;
-        padding: 0.5rem 1.2rem;
-        margin: 0.3rem 0;
-    }}
-    .stRadio > div > label {{
-        color: {ACCENT_BLUE} !important;
-        font-weight: 600 !important;
-    }}
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+PARTY_COLORS = {
+    "BJP": "#ff6d01",
+    "UDF": "#4285f4",
+    "LDF": "#db261d"
+}
 
 @st.cache_resource
 def get_gspread_client_and_creds():
@@ -231,7 +168,7 @@ def show_centered_dataframe(df):
     html += '<table style="margin-left:auto;margin-right:auto;border-collapse:collapse;width:100%;">'
     html += '<thead><tr>'
     for col in df.columns:
-        html += f'<th style="border:1px solid #ddd;background:{TABLE_HEADER_BG};color:{TABLE_HEADER_TEXT};">{col}</th>'
+        html += f'<th style="border:1px solid #ddd;background:#f5f7fa;">{col}</th>'
     html += '</tr></thead><tbody>'
     for _, row in df.iterrows():
         html += '<tr>'
@@ -246,10 +183,11 @@ def plot_horizontal_bar_plotly(df, key=None):
     df = df[~df[label_col].astype(str).str.lower().str.contains('difference')]
     exclude_keywords = ['sample', 'total', 'grand']
     value_cols = [col for col in df.columns[1:] if not any(k in col.strip().lower() for k in exclude_keywords)]
+    # Assign party colors if match, otherwise use plotly default
     color_map = []
     for col in value_cols:
         color_map.append(PARTY_COLORS.get(col, None))
-    colors = [c for c in color_map if c] + [ACCENT_GREEN, ACCENT_BLUE, "#3B82F6", "#60A5FA"]
+    colors = [c for c in color_map if c] + px.colors.qualitative.Plotly
     n_bars = df.shape[0] if len(value_cols) == 1 else len(value_cols)
     colors = colors * ((n_bars // len(colors)) + 1)
     for col in value_cols:
@@ -271,12 +209,13 @@ def plot_horizontal_bar_plotly(df, key=None):
             title=f"Distribution by {label_col}",
             xaxis_title=value_col, yaxis_title=label_col,
             showlegend=False, bargap=0.2,
-            plot_bgcolor=CHART_BG, paper_bgcolor=CHART_BG
+            plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa"
         )
         fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     else:
         long_df = df.melt(id_vars=label_col, value_vars=value_cols, var_name='Category', value_name='Value')
-        color_discrete_map = {cat: PARTY_COLORS.get(cat, ACCENT_BLUE) for cat in long_df['Category'].unique()}
+        # Map party colors to Category column
+        color_discrete_map = {cat: PARTY_COLORS.get(cat, None) for cat in long_df['Category'].unique()}
         fig = px.bar(
             long_df, y=label_col, x='Value', color='Category',
             orientation='h', barmode='group', text='Value',
@@ -286,19 +225,26 @@ def plot_horizontal_bar_plotly(df, key=None):
             title=f"Distribution by {label_col}",
             xaxis_title='Value', yaxis_title=label_col,
             bargap=0.2, legend_title="Category",
-            plot_bgcolor=CHART_BG, paper_bgcolor=CHART_BG
+            plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa"
         )
         fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     st.plotly_chart(fig, use_container_width=True, key=key)
 
 def plot_trend_by_party(df, key=None, show_margin_calculator=True):
+    party_colors = {
+        "BJP": "#ff6d01",
+        "UDF": "#4285f4",
+        "LDF": "#db261d"
+    }
     label_col = df.columns[0]
     parties = [c for c in df.columns if c != label_col]
     plot_df = df.copy()
     for party in parties:
         plot_df[party] = plot_df[party].astype(str).str.replace('%', '').astype(float)
     plot_df = plot_df.melt(id_vars=label_col, value_vars=parties, var_name="Party/Candidate", value_name="Value")
-    color_discrete_map = {p: PARTY_COLORS.get(p, ACCENT_BLUE) for p in plot_df['Party/Candidate'].unique()}
+    color_discrete_map = {}
+    for party in plot_df['Party/Candidate'].unique():
+        color_discrete_map[party] = party_colors.get(party, None)
     fig = px.line(
         plot_df,
         x=label_col,
@@ -310,8 +256,8 @@ def plot_trend_by_party(df, key=None, show_margin_calculator=True):
     )
     fig.update_layout(
         title="Party and Leader Popularity Tracker",
-        plot_bgcolor=CHART_BG,
-        paper_bgcolor=CHART_BG,
+        plot_bgcolor="#f5f7fa",
+        paper_bgcolor="#f5f7fa",
         legend_title="Party/Candidate"
     )
     st.plotly_chart(fig, use_container_width=True, key=key)
@@ -336,7 +282,7 @@ def plot_trend_by_party(df, key=None, show_margin_calculator=True):
             "Margin": (df_t2.loc[df_t1.index] - df_t1.values).round(2)
         })
         show_centered_dataframe(margin_df)
-        margin_colors = [PARTY_COLORS.get(p, ACCENT_BLUE) for p in margin_df["Party/Candidate"]]
+        margin_colors = [party_colors.get(p, px.colors.qualitative.Plotly[i % 10]) for i, p in enumerate(margin_df["Party/Candidate"])]
         margin_fig = px.bar(
             margin_df,
             x="Party/Candidate",
@@ -350,13 +296,17 @@ def plot_trend_by_party(df, key=None, show_margin_calculator=True):
             xaxis_title="Party/Candidate",
             yaxis_title="Margin",
             showlegend=False,
-            plot_bgcolor=CHART_BG,
-            paper_bgcolor=CHART_BG
+            plot_bgcolor="#f5f7fa",
+            paper_bgcolor="#f5f7fa"
         )
         margin_fig.update_traces(texttemplate='%{text:.2f}', textposition='outside')
         st.plotly_chart(margin_fig, use_container_width=True, key=f"{key}_margin_chart")
 
-# --- Place all other dashboard functions here, including comparative_dashboard and Stratified_dashboard ---
+def load_pivot_data_by_id(gc, file_id, worksheet_name):
+    sh = gc.open_by_key(file_id)
+    ws = sh.worksheet(worksheet_name)
+    data = ws.get_all_values()
+    return data
 
 def comparative_dashboard(gc):
     files = get_gsheet_metadata(GOOGLE_DRIVE_OUTPUT_FOLDER)
@@ -364,6 +314,7 @@ def comparative_dashboard(gc):
     if not selected_file:
         st.warning("Kerala_Survey_Comparative sheet not found!")
         return
+
     try:
         all_ws = gc.open_by_key(selected_file['id']).worksheets()
         tab_infos = []
@@ -380,14 +331,17 @@ def comparative_dashboard(gc):
         if not tab_infos:
             st.warning("No comparative analysis tabs found in this workbook.")
             return
+
         question_options = sorted({t['question'] for t in tab_infos})
         selected_question = st.selectbox("Select Question", question_options)
+
         available_norms = sorted({t['norm'] for t in tab_infos if t['question'] == selected_question})
         selected_norm = st.selectbox("Select Normalisation", available_norms)
+
         relevant_tabs = [t for t in tab_infos if t['question'] == selected_question and t['norm'] == selected_norm]
         all_data = []
         for tab_entry in relevant_tabs:
-            data = gc.open_by_key(selected_file['id']).worksheet(tab_entry['tab']).get_all_values()
+            data = load_pivot_data_by_id(gc, selected_file['id'], tab_entry['tab'])
             blocks = find_cuts_and_blocks(data)
             if not blocks:
                 continue
@@ -408,6 +362,7 @@ def comparative_dashboard(gc):
         if "Month" in cols:
             cols = ["Month"] + [c for c in cols if c != "Month"]
         df_final = df_final[cols]
+
         st.markdown('<div class="center-table">', unsafe_allow_html=True)
         st.markdown(
             f"<h4 style='text-align: center; color: #22356f;'>{selected_question} ({selected_norm})</h4>",
@@ -415,10 +370,12 @@ def comparative_dashboard(gc):
         )
         show_centered_dataframe(df_final)
         st.markdown('</div>', unsafe_allow_html=True)
+
         plot_trend_by_party(df_final, key="comparative_trend_party", show_margin_calculator=True)
         csv = df_final.to_csv(index=False).encode('utf-8')
         st.download_button("Download CSV", csv, f"{selected_question}_{selected_norm}_comparative.csv", "text/csv")
         st.markdown("---")
+
     except Exception as e:
         st.error(f"Could not load comparative analysis: {e}")
 
@@ -433,6 +390,7 @@ def Stratified_dashboard(gc):
     month_options = [f['name'].replace("Kerala_Survey_", "").replace(".xlsx", "") for f in month_files]
     selected_month_idx = st.selectbox("Select Month", range(len(month_options)), format_func=lambda i: month_options[i])
     selected_file = month_files[selected_month_idx]
+
     try:
         all_ws = gc.open_by_key(selected_file['id']).worksheets()
         EXCLUDED_SHEET_NAMES = ['sheet1', 'sheet', 'data', 'instruction', 'test']
@@ -461,7 +419,8 @@ def Stratified_dashboard(gc):
         if not selected_tab:
             st.warning("No matching worksheet found.")
             return
-        data = gc.open_by_key(selected_file['id']).worksheet(selected_tab).get_all_values()
+
+        data = load_pivot_data_by_id(gc, selected_file['id'], selected_tab)
         blocks = find_cuts_and_blocks(data)
         if not blocks:
             st.warning("No summary report types found.")
@@ -483,6 +442,7 @@ def Stratified_dashboard(gc):
             st.warning("No State Summary blocks found.")
             return
         selected_block_label = st.selectbox("Select Summary Report", state_block_labels)
+
         selected_block = next(b for b in blocks if b["label"] == selected_block_label)
         df = extract_block_df(data, selected_block)
         df = df.loc[~df[df.columns[0]].astype(str).str.lower().str.contains("grand total")]
@@ -492,6 +452,7 @@ def Stratified_dashboard(gc):
         st.markdown('</div>', unsafe_allow_html=True)
         plot_horizontal_bar_plotly(df, key="stratified_horizontal_bar")
         st.markdown("---")
+
         geo_sections = [("District", "District"), ("Zone", "Zone"), ("Region", "Region"), ("AC", "Assembly Constituency")]
         for block_prefix, geo_name in geo_sections:
             with st.expander(f"{geo_name} Wise Survey Reports ({block_prefix})", expanded=False):
