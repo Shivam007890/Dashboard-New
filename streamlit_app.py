@@ -9,81 +9,14 @@ import plotly.express as px
 import base64
 from googleapiclient.discovery import build
 
-# For PDF export
-from io import BytesIO
-from xhtml2pdf import pisa
-
-# === THEME COLORS ===
-BG_GRADIENT = "linear-gradient(90deg, #10B981 0%, #34D399 60%, #60A5FA 100%)"
-HEADER_BG = "#3B82F6"
-HEADER_TEXT = "#fff"
-ACCENT_BLUE = "#60A5FA"
-ACCENT_GREEN = "#34D399"
-TABLE_HEADER_BG = "#f5f7fa"
-TABLE_HEADER_TEXT = "#22356f"
-CHART_BG = "#F0FDF4"
-TEXT_COLOR = "#22356f"
+GOOGLE_DRIVE_OUTPUT_FOLDER = "Kerala Survey Report Output"
+USERS = {"admin": "adminpass", "shivam": "shivampass", "analyst": "analyst2024"}
 
 PARTY_COLORS = {
     "BJP": "#ff6d01",
     "UDF": "#4285f4",
     "LDF": "#db261d"
 }
-
-GOOGLE_DRIVE_OUTPUT_FOLDER = "Kerala Survey Report Output"
-USERS = {"admin": "adminpass", "shivam": "shivampass", "analyst": "analyst2024"}
-
-# Streamlit custom styling
-st.markdown(
-    f"""
-    <style>
-    .dashboard-title {{
-        background: {BG_GRADIENT};
-        color: {HEADER_TEXT};
-        padding: 1.3rem 0;
-        border-radius: 1rem;
-        margin-bottom: 2rem;
-        font-size: 2.5rem;
-        font-weight: 700;
-    }}
-    .section-header {{
-        background: {HEADER_BG};
-        color: {HEADER_TEXT};
-        padding: 0.6rem 1.2rem;
-        border-radius: 0.7rem;
-        margin: 1.5rem 0 1rem 0;
-        font-size: 1.3rem;
-        font-weight: 600;
-        letter-spacing: 1px;
-    }}
-    .center-table h4 {{
-        color: {ACCENT_BLUE};
-        text-align: center;
-        margin-bottom: 0.5rem;
-    }}
-    th {{
-        background: {TABLE_HEADER_BG} !important;
-        color: {TABLE_HEADER_TEXT} !important;
-        font-size: 1.1rem !important;
-    }}
-    .stDownloadButton > button {{
-        background: {BG_GRADIENT};
-        color: {HEADER_TEXT};
-        border: none;
-        border-radius: 0.5rem;
-        font-size: 1rem;
-        font-weight: 600;
-        padding: 0.5rem 1.2rem;
-        margin: 0.3rem 0;
-    }}
-    .stRadio > div > label {{
-        color: {ACCENT_BLUE} !important;
-        font-weight: 600 !important;
-    }}
-    </style>
-    """,
-    unsafe_allow_html=True
-)
 
 @st.cache_resource
 def get_gspread_client_and_creds():
@@ -245,50 +178,12 @@ def show_centered_dataframe(df):
     html += '</tbody></table></div>'
     st.markdown(html, unsafe_allow_html=True)
 
-# --- PDF Export Feature ---
-def dataframe_to_pdf_bytes(df, table_title="Table"):
-    html = f"""
-    <html>
-    <head>
-        <style>
-            table {{border-collapse: collapse; width: 100%; font-size: 13px;}}
-            th, td {{border: 1px solid #888; padding: 7px; text-align: center;}}
-            th {{background-color: #f5f7fa; color: #22356f;}}
-            h2 {{text-align:center; color: #22356f;}}
-        </style>
-    </head>
-    <body>
-        <h2>{table_title}</h2>
-        {df.to_html(index=False, border=0)}
-    </body>
-    </html>
-    """
-    pdf_bytes = BytesIO()
-    pisa_status = pisa.CreatePDF(html, dest=pdf_bytes)
-    if pisa_status.err:
-        return None
-    pdf_bytes.seek(0)
-    return pdf_bytes
-
-def download_pdf_button(df, filename="table.pdf", label="Download PDF", table_title="Table"):
-    pdf_bytes = dataframe_to_pdf_bytes(df, table_title=table_title)
-    if pdf_bytes is not None:
-        st.download_button(
-            label,
-            data=pdf_bytes,
-            file_name=filename,
-            mime="application/pdf"
-        )
-    else:
-        st.warning("PDF generation failed.")
-
-# --- END PDF Export Feature ---
-
 def plot_horizontal_bar_plotly(df, key=None):
     label_col = df.columns[0]
     df = df[~df[label_col].astype(str).str.lower().str.contains('difference')]
     exclude_keywords = ['sample', 'total', 'grand']
     value_cols = [col for col in df.columns[1:] if not any(k in col.strip().lower() for k in exclude_keywords)]
+    # Assign party colors if match, otherwise use plotly default
     color_map = []
     for col in value_cols:
         color_map.append(PARTY_COLORS.get(col, None))
@@ -319,6 +214,7 @@ def plot_horizontal_bar_plotly(df, key=None):
         fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     else:
         long_df = df.melt(id_vars=label_col, value_vars=value_cols, var_name='Category', value_name='Value')
+        # Map party colors to Category column
         color_discrete_map = {cat: PARTY_COLORS.get(cat, None) for cat in long_df['Category'].unique()}
         fig = px.bar(
             long_df, y=label_col, x='Value', color='Category',
@@ -335,7 +231,11 @@ def plot_horizontal_bar_plotly(df, key=None):
     st.plotly_chart(fig, use_container_width=True, key=key)
 
 def plot_trend_by_party(df, key=None, show_margin_calculator=True):
-    party_colors = PARTY_COLORS
+    party_colors = {
+        "BJP": "#ff6d01",
+        "UDF": "#4285f4",
+        "LDF": "#db261d"
+    }
     label_col = df.columns[0]
     parties = [c for c in df.columns if c != label_col]
     plot_df = df.copy()
@@ -408,7 +308,6 @@ def load_pivot_data_by_id(gc, file_id, worksheet_name):
     data = ws.get_all_values()
     return data
 
-# --- Dashboard functions ---
 def comparative_dashboard(gc):
     files = get_gsheet_metadata(GOOGLE_DRIVE_OUTPUT_FOLDER)
     selected_file = next((f for f in files if f["name"] == "Kerala_Survey_Comparative"), None)
@@ -470,13 +369,12 @@ def comparative_dashboard(gc):
             unsafe_allow_html=True
         )
         show_centered_dataframe(df_final)
-        download_pdf_button(df_final, filename=f"{selected_question}_{selected_norm}_comparative.pdf",
-                            label="Download as PDF", table_title=f"{selected_question} ({selected_norm})")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        plot_trend_by_party(df_final, key="comparative_trend_party", show_margin_calculator=True)
         csv = df_final.to_csv(index=False).encode('utf-8')
         st.download_button("Download CSV", csv, f"{selected_question}_{selected_norm}_comparative.csv", "text/csv")
         st.markdown("---")
-
-        plot_trend_by_party(df_final, key="comparative_trend_party", show_margin_calculator=True)
 
     except Exception as e:
         st.error(f"Could not load comparative analysis: {e}")
@@ -551,8 +449,6 @@ def Stratified_dashboard(gc):
         df = df.drop(columns=[col for col in df.columns if "grand total" in str(col).lower()], errors="ignore")
         st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_block_label}{(" (" + selected_norm + ")") if selected_norm else ""}</h4>', unsafe_allow_html=True)
         show_centered_dataframe(df)
-        download_pdf_button(df, filename=f"{selected_block_label}_{selected_norm}_stratified.pdf",
-                            label="Download as PDF", table_title=f"{selected_block_label} ({selected_norm})")
         st.markdown('</div>', unsafe_allow_html=True)
         plot_horizontal_bar_plotly(df, key="stratified_horizontal_bar")
         st.markdown("---")
@@ -586,8 +482,6 @@ def Stratified_dashboard(gc):
                 filtered_df = df[df[geo_col].isin(selection)]
                 st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_block_label}{(" (" + selected_norm + ")") if selected_norm else ""}</h4>', unsafe_allow_html=True)
                 show_centered_dataframe(filtered_df)
-                download_pdf_button(filtered_df, filename=f"{selected_block_label}_{selected_norm}_{geo_name}_stratified.pdf",
-                                   label="Download as PDF", table_title=f"{selected_block_label} ({selected_norm}) - {geo_name}")
                 st.markdown('</div>', unsafe_allow_html=True)
                 plot_horizontal_bar_plotly(filtered_df, key=f"{block_prefix}_{selected_block_label}_geo_horizontal_bar")
         cut_labels = ["Religion", "Gender", "Age", "Community"]
@@ -600,8 +494,6 @@ def Stratified_dashboard(gc):
                     df = df.drop(columns=[col for col in df.columns if "grand total" in str(col).lower()], errors="ignore")
                     st.markdown(f'<div class="center-table"><h4 style="text-align:center">{block["label"]}{(" (" + selected_norm + ")") if selected_norm else ""}</h4>', unsafe_allow_html=True)
                     show_centered_dataframe(df)
-                    download_pdf_button(df, filename=f"{block['label']}_{selected_norm}_cut.pdf",
-                                       label="Download as PDF", table_title=f"{block['label']} ({selected_norm})")
                     st.markdown('</div>', unsafe_allow_html=True)
                     plot_horizontal_bar_plotly(df, key=f"cut_{block['label']}_horizontal_bar")
                     st.markdown("---")
