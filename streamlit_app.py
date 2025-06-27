@@ -545,17 +545,17 @@ def password_setup_form():
 def main_dashboard(gc):
     st.markdown("<h1 class='dashboard-title' style='text-align:center;'>Kerala Survey Dashboard</h1>", unsafe_allow_html=True)
     map_path = "kerala-vector-illustration.jpg"
-    if os.path.exists(map_path):
-        with open(map_path, "rb") as imgf:
-            imgdata = base64.b64encode(imgf.read()).decode('utf-8')
-        st.markdown(
-            f'''
-            <div style="display: flex; justify-content: center;">
-                <img src="data:image/png;base64,{imgdata}" width="320" alt="Kerala Map"/>
-            </div>
-            ''',
-            unsafe_allow_html=True
-        )
+if os.path.exists(map_path):
+    with open(map_path, "rb") as imgf:
+        imgdata = base64.b64encode(imgf.read()).decode('utf-8')
+    st.markdown(
+        f'''
+        <div style="display: flex; justify-content: center;">
+            <img src="data:image/jpeg;base64,{imgdata}" width="320" alt="Kerala Map"/>
+        </div>
+        ''',
+        unsafe_allow_html=True
+    )
     st.markdown('<div class="section-header">Choose an Option</div>', unsafe_allow_html=True)
     choice = st.radio(
         "",
