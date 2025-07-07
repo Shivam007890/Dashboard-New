@@ -587,7 +587,7 @@ def main_dashboard(gc):
 
 if __name__ == "__main__":
     # Set the Kerala illustration as the background
-    set_background("kerala-vector-illustration.jpg")  # <-- Use the exact name of your uploaded file
+    set_background("ChatGPT Image Jul 7, 2025, 05_05_56 PM.png")  # <-- Use the exact name of your uploaded file
 
     st.set_page_config(page_title="Kerala Survey Dashboard", layout="wide")
     if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
