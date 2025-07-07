@@ -9,6 +9,24 @@ import plotly.express as px
 import base64
 from googleapiclient.discovery import build
 
+# Set background for the entire Streamlit app
+def set_background(image_path: str):
+    with open(image_path, 'rb') as f:
+        img_data = f.read()
+    encoded = base64.b64encode(img_data).decode()
+    css = f"""
+    <style>
+    .stApp {{
+        background-image: url("data:image/png;base64,{encoded}");
+        background-size: cover;
+        background-repeat: no-repeat;
+        background-attachment: fixed;
+        background-position: center;
+    }}
+    </style>
+    """
+    st.markdown(css, unsafe_allow_html=True)
+
 GOOGLE_DRIVE_OUTPUT_FOLDER = "Kerala Survey Report Output"
 USERS = {"admin": "adminpass", "shivam": "shivampass", "analyst": "analyst2024"}
 
@@ -183,7 +201,6 @@ def plot_horizontal_bar_plotly(df, key=None):
     df = df[~df[label_col].astype(str).str.lower().str.contains('difference')]
     exclude_keywords = ['sample', 'total', 'grand']
     value_cols = [col for col in df.columns[1:] if not any(k in col.strip().lower() for k in exclude_keywords)]
-    # Assign party colors if match, otherwise use plotly default
     color_map = []
     for col in value_cols:
         color_map.append(PARTY_COLORS.get(col, None))
@@ -214,7 +231,6 @@ def plot_horizontal_bar_plotly(df, key=None):
         fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     else:
         long_df = df.melt(id_vars=label_col, value_vars=value_cols, var_name='Category', value_name='Value')
-        # Map party colors to Category column
         color_discrete_map = {cat: PARTY_COLORS.get(cat, None) for cat in long_df['Category'].unique()}
         fig = px.bar(
             long_df, y=label_col, x='Value', color='Category',
@@ -570,6 +586,9 @@ def main_dashboard(gc):
         Stratified_dashboard(gc)
 
 if __name__ == "__main__":
+    # Set the Kerala illustration as the background
+    set_background("kerala-bg.png")  # <-- Use your saved image path here
+
     st.set_page_config(page_title="Kerala Survey Dashboard", layout="wide")
     if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
     if 'username' not in st.session_state: st.session_state['username'] = ""
