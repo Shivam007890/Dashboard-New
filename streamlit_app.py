@@ -17,7 +17,7 @@ def set_background(image_path: str):
     css = f"""
     <style>
     .stApp {{
-        background-image: url("data:image/png;base64,{encoded}");
+        background-image: url("data:image/jpg;base64,{encoded}");
         background-size: cover;
         background-repeat: no-repeat;
         background-attachment: fixed;
@@ -587,7 +587,7 @@ def main_dashboard(gc):
 
 if __name__ == "__main__":
     # Set the Kerala illustration as the background
-    set_background("kerala-bg.png")  # <-- Use your saved image path here
+    set_background("kerala-bg.jpg")  # <-- Use your saved image path here
 
     st.set_page_config(page_title="Kerala Survey Dashboard", layout="wide")
     if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
