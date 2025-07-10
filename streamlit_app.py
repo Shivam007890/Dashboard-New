@@ -9,32 +9,8 @@ import plotly.express as px
 import base64
 from googleapiclient.discovery import build
 
-# Set background for the entire Streamlit app using your provided image
-def set_background(image_path: str):
-    with open(image_path, 'rb') as f:
-        img_data = f.read()
-    encoded = base64.b64encode(img_data).decode()
-    css = f"""
-    <style>
-    .stApp {{
-        background-image: url("data:image/jpeg;base64,{encoded}");
-        background-size: cover;
-        background-repeat: no-repeat;
-        background-attachment: fixed;
-        background-position: center;
-    }}
-    </style>
-    """
-    st.markdown(css, unsafe_allow_html=True)
-
 GOOGLE_DRIVE_OUTPUT_FOLDER = "Kerala Survey Report Output"
 USERS = {"admin": "adminpass", "shivam": "shivampass", "analyst": "analyst2024"}
-
-PARTY_COLORS = {
-    "BJP": "#ff6d01",
-    "UDF": "#4285f4",
-    "LDF": "#db261d"
-}
 
 @st.cache_resource
 def get_gspread_client_and_creds():
@@ -58,6 +34,7 @@ def list_gsheet_files_in_folder(credentials, folder_name):
         folders = drive_service.files().list(
             q=f"mimeType='application/vnd.google-apps.folder' and name='{folder_name}'",
             fields="files(id, name)").execute().get('files', [])
+        st.write("DEBUG: Folders found:", folders)
         if not folders:
             st.warning(f"Folder '{folder_name}' not found or not shared with the service account.")
             return []
@@ -66,6 +43,7 @@ def list_gsheet_files_in_folder(credentials, folder_name):
             q=f"mimeType='application/vnd.google-apps.spreadsheet' and '{folder_id}' in parents",
             fields="files(id, name, parents)").execute()
         files = results.get('files', [])
+        st.write("DEBUG: Files found in folder:", files)
         return files
     except Exception as e:
         st.error(f"Google Drive API error: {e}")
@@ -75,15 +53,17 @@ def get_gsheet_metadata(folder_name):
     _, credentials = get_gspread_client_and_creds()
     return list_gsheet_files_in_folder(credentials, folder_name)
 
-def select_gsheet_file(section="Stratified Survey Reports"):
+def select_gsheet_file(section="Individual Survey Reports"):
     files = get_gsheet_metadata(GOOGLE_DRIVE_OUTPUT_FOLDER)
     if not files:
         st.warning("No Google Sheets files found in the output folder.")
         return None
-    if section == "Stratified Survey Reports":
+    if section == "Individual Survey Reports":
         files = [f for f in files if f['name'].startswith("Kerala_Survey_") and not "Comparative" in f['name']]
     elif section == "Periodic Popularity Poll Ticker":
         files = [f for f in files if "Comparative" in f['name']]
+    elif section == "Nilambur Bypoll Survey":
+        files = [f for f in files if "Nilambur" in f['name']]
     if not files:
         st.warning(f"No files found for section '{section}'.")
         return None
@@ -104,6 +84,15 @@ def is_question_sheet(ws):
         if word in name and len(name) <= len(word) + 2:
             return False
     return True
+
+def get_month_list(question_sheets):
+    months = []
+    for name in question_sheets:
+        if "-" in name:
+            month = name.split("-")[0].strip()
+            if month and month not in months:
+                months.append(month)
+    return months
 
 def find_cuts_and_blocks(data):
     blocks = []
@@ -175,36 +164,34 @@ def extract_block_df(data, block):
 
 def show_centered_dataframe(df):
     html = '<div style="overflow-x:auto">'
-    html += '''
-    <style>
-    th, td { 
-        text-align:center !important; 
-        font-size: 16px !important; 
-    }
-    </style>
-    '''
+    html += '<style>th, td { text-align:center !important; }</style>'
     html += '<table style="margin-left:auto;margin-right:auto;border-collapse:collapse;width:100%;">'
     html += '<thead><tr>'
+    html += f'<th style="border:1px solid #ddd;background:#f5f7fa;"></th>'
     for col in df.columns:
         html += f'<th style="border:1px solid #ddd;background:#f5f7fa;">{col}</th>'
     html += '</tr></thead><tbody>'
-    for _, row in df.iterrows():
+    for idx, row in df.iterrows():
         html += '<tr>'
+        html += f'<td style="border:1px solid #ddd;background:#f5f7fa;">{idx}</td>'
         for cell in row:
             html += f'<td style="border:1px solid #ddd;">{cell if pd.notna(cell) else ""}</td>'
         html += '</tr>'
     html += '</tbody></table></div>'
     st.markdown(html, unsafe_allow_html=True)
 
-def plot_horizontal_bar_plotly(df, key=None):
+def plot_horizontal_bar_plotly(df, key=None, colorway="plotly"):
     label_col = df.columns[0]
     df = df[~df[label_col].astype(str).str.lower().str.contains('difference')]
     exclude_keywords = ['sample', 'total', 'grand']
     value_cols = [col for col in df.columns[1:] if not any(k in col.strip().lower() for k in exclude_keywords)]
-    color_map = []
-    for col in value_cols:
-        color_map.append(PARTY_COLORS.get(col, None))
-    colors = [c for c in color_map if c] + px.colors.qualitative.Plotly
+    if colorway == "plotly":
+        colors = px.colors.qualitative.Plotly
+    else:
+        colors = [
+            "#1976d2", "#fdbb2d", "#22356f", "#7b1fa2", "#0288d1", "#c2185b",
+            "#ffb300", "#388e3c", "#8d6e63"
+        ]
     n_bars = df.shape[0] if len(value_cols) == 1 else len(value_cols)
     colors = colors * ((n_bars // len(colors)) + 1)
     for col in value_cols:
@@ -231,11 +218,10 @@ def plot_horizontal_bar_plotly(df, key=None):
         fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     else:
         long_df = df.melt(id_vars=label_col, value_vars=value_cols, var_name='Category', value_name='Value')
-        color_discrete_map = {cat: PARTY_COLORS.get(cat, None) for cat in long_df['Category'].unique()}
         fig = px.bar(
             long_df, y=label_col, x='Value', color='Category',
             orientation='h', barmode='group', text='Value',
-            color_discrete_map=color_discrete_map
+            color_discrete_sequence=colors
         )
         fig.update_layout(
             title=f"Distribution by {label_col}",
@@ -246,78 +232,6 @@ def plot_horizontal_bar_plotly(df, key=None):
         fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     st.plotly_chart(fig, use_container_width=True, key=key)
 
-def plot_trend_by_party(df, key=None, show_margin_calculator=True):
-    party_colors = {
-        "BJP": "#ff6d01",
-        "UDF": "#4285f4",
-        "LDF": "#db261d"
-    }
-    label_col = df.columns[0]
-    parties = [c for c in df.columns if c != label_col]
-    plot_df = df.copy()
-    for party in parties:
-        plot_df[party] = plot_df[party].astype(str).str.replace('%', '').astype(float)
-    plot_df = plot_df.melt(id_vars=label_col, value_vars=parties, var_name="Party/Candidate", value_name="Value")
-    color_discrete_map = {}
-    for party in plot_df['Party/Candidate'].unique():
-        color_discrete_map[party] = party_colors.get(party, None)
-    fig = px.line(
-        plot_df,
-        x=label_col,
-        y="Value",
-        color="Party/Candidate",
-        markers=True,
-        labels={"Value": "Percentage", label_col: "Month"},
-        color_discrete_map=color_discrete_map
-    )
-    fig.update_layout(
-        title="Party and Leader Popularity Tracker",
-        plot_bgcolor="#f5f7fa",
-        paper_bgcolor="#f5f7fa",
-        legend_title="Party/Candidate"
-    )
-    st.plotly_chart(fig, use_container_width=True, key=key)
-
-    if show_margin_calculator:
-        st.markdown("### Margin Calculator")
-        timeline_options = plot_df[label_col].unique().tolist()
-        if len(timeline_options) < 2:
-            st.info("At least two time points are needed for margin calculation.")
-            return
-        t1, t2 = st.selectbox("Select First Time Point", timeline_options, index=0, key=f"{key}_margin_t1"), \
-                 st.selectbox("Select Second Time Point", timeline_options, index=1, key=f"{key}_margin_t2")
-        if t1 == t2:
-            st.info("Select two different time points to compare margin.")
-            return
-        df_t1 = plot_df[plot_df[label_col] == t1].set_index("Party/Candidate")["Value"]
-        df_t2 = plot_df[plot_df[label_col] == t2].set_index("Party/Candidate")["Value"]
-        margin_df = pd.DataFrame({
-            "Party/Candidate": df_t1.index,
-            f"{t1}": df_t1.values,
-            f"{t2}": df_t2.loc[df_t1.index].values,
-            "Margin": (df_t2.loc[df_t1.index] - df_t1.values).round(2)
-        })
-        show_centered_dataframe(margin_df)
-        margin_colors = [party_colors.get(p, px.colors.qualitative.Plotly[i % 10]) for i, p in enumerate(margin_df["Party/Candidate"])]
-        margin_fig = px.bar(
-            margin_df,
-            x="Party/Candidate",
-            y="Margin",
-            color="Party/Candidate",
-            color_discrete_sequence=margin_colors,
-            text="Margin"
-        )
-        margin_fig.update_layout(
-            title="Margin Between Selected Time Points",
-            xaxis_title="Party/Candidate",
-            yaxis_title="Margin",
-            showlegend=False,
-            plot_bgcolor="#f5f7fa",
-            paper_bgcolor="#f5f7fa"
-        )
-        margin_fig.update_traces(texttemplate='%{text:.2f}', textposition='outside')
-        st.plotly_chart(margin_fig, use_container_width=True, key=f"{key}_margin_chart")
-
 def load_pivot_data_by_id(gc, file_id, worksheet_name):
     sh = gc.open_by_key(file_id)
     ws = sh.worksheet(worksheet_name)
@@ -325,10 +239,8 @@ def load_pivot_data_by_id(gc, file_id, worksheet_name):
     return data
 
 def comparative_dashboard(gc):
-    files = get_gsheet_metadata(GOOGLE_DRIVE_OUTPUT_FOLDER)
-    selected_file = next((f for f in files if f["name"] == "Kerala_Survey_Comparative"), None)
+    selected_file = select_gsheet_file(section="Periodic Popularity Poll Ticker")
     if not selected_file:
-        st.warning("Kerala_Survey_Comparative sheet not found!")
         return
 
     try:
@@ -336,6 +248,7 @@ def comparative_dashboard(gc):
         tab_infos = []
         for ws in all_ws:
             name = ws.title
+            # Parse pattern: [QUESTION] ([NORM]) - Comparative
             if name.endswith("- Comparative") and "(" in name and ")" in name:
                 q_part = name[:name.rfind("(")].strip()
                 norm_part = name[name.rfind("(")+1:name.rfind(")")].strip()
@@ -354,121 +267,93 @@ def comparative_dashboard(gc):
         available_norms = sorted({t['norm'] for t in tab_infos if t['question'] == selected_question})
         selected_norm = st.selectbox("Select Normalisation", available_norms)
 
-        relevant_tabs = [t for t in tab_infos if t['question'] == selected_question and t['norm'] == selected_norm]
-        all_data = []
-        for tab_entry in relevant_tabs:
-            data = load_pivot_data_by_id(gc, selected_file['id'], tab_entry['tab'])
-            blocks = find_cuts_and_blocks(data)
-            if not blocks:
-                continue
-            block = blocks[0]
-            df = extract_block_df(data, block)
-            df = df.loc[~df[df.columns[0]].str.lower().str.contains("grand total|sample count")]
-            df = df.drop(columns=[col for col in df.columns if "grand total" in str(col).lower() or "sample" in str(col).lower()], errors="ignore")
-            if "Month" not in df.columns and "month" not in df.columns:
-                month = tab_entry['tab'].split()[-3].replace("-", "_") if len(tab_entry['tab'].split()) > 2 else ""
-                df.insert(0, "Month", month)
-            all_data.append(df)
-        if not all_data:
-            st.warning("No data found for this question/norm.")
+        tab_entry = next((t for t in tab_infos if t['question'] == selected_question and t['norm'] == selected_norm), None)
+        if not tab_entry:
+            st.warning("No matching sheet found.")
             return
-        df_final = pd.concat(all_data, ignore_index=True)
-        df_final = df_final.loc[:, ~df_final.columns.duplicated()]
-        cols = list(df_final.columns)
-        if "Month" in cols:
-            cols = ["Month"] + [c for c in cols if c != "Month"]
-        df_final = df_final[cols]
+
+        data = load_pivot_data_by_id(gc, selected_file['id'], tab_entry['tab'])
+        blocks = find_cuts_and_blocks(data)
+        if not blocks:
+            st.warning("No data blocks found in this sheet.")
+            return
+        block = blocks[0]
+        df = extract_block_df(data, block)
+
+        # Filter out rows containing 'Grand Total' or 'Sample Count' (case insensitive)
+        df = df[~df[df.columns[0]].str.lower().str.contains("grand total|sample count")]
 
         st.markdown('<div class="center-table">', unsafe_allow_html=True)
         st.markdown(
             f"<h4 style='text-align: center; color: #22356f;'>{selected_question} ({selected_norm})</h4>",
             unsafe_allow_html=True
         )
-        show_centered_dataframe(df_final)
+        show_centered_dataframe(df)
         st.markdown('</div>', unsafe_allow_html=True)
 
-        plot_trend_by_party(df_final, key="comparative_trend_party", show_margin_calculator=True)
-        csv = df_final.to_csv(index=False).encode('utf-8')
-        st.download_button("Download CSV", csv, f"{selected_question}_{selected_norm}_comparative.csv", "text/csv")
+        x_col = df.columns[0]
+        value_cols = [c for c in df.columns[1:] if df[c].apply(lambda v: str(v).replace('.','',1).replace('-','',1).replace('%','').isdigit()).any()]
+        for col in value_cols:
+            df[col] = df[col].astype(str).str.replace('%','').astype(float)
+        if value_cols:
+            fig = px.bar(df, y=x_col, x=value_cols[0], orientation='h', text=value_cols[0], color=x_col)
+            st.plotly_chart(fig, use_container_width=True)
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.download_button("Download CSV", csv, f"{tab_entry['tab']}_comparative.csv", "text/csv")
         st.markdown("---")
 
     except Exception as e:
         st.error(f"Could not load comparative analysis: {e}")
 
-def Stratified_dashboard(gc):
-    st.markdown('<div class="section-header">Stratified Survey Reports</div>', unsafe_allow_html=True)
-    files = get_gsheet_metadata(GOOGLE_DRIVE_OUTPUT_FOLDER)
-    month_files = [f for f in files if f['name'].startswith("Kerala_Survey_") and not "Comparative" in f['name']]
-    if not month_files:
-        st.warning("No month-wise files found.")
+def individual_dashboard(gc):
+    st.markdown('<div class="section-header">Individual Survey Reports</div>', unsafe_allow_html=True)
+    selected_file = select_gsheet_file(section="Individual Survey Reports")
+    if not selected_file:
         return
-    month_files = sorted(month_files, key=lambda f: f['name'])
-    month_options = [f['name'].replace("Kerala_Survey_", "").replace(".xlsx", "") for f in month_files]
-    selected_month_idx = st.selectbox("Select Month", range(len(month_options)), format_func=lambda i: month_options[i])
-    selected_file = month_files[selected_month_idx]
-
     try:
         all_ws = gc.open_by_key(selected_file['id']).worksheets()
-        EXCLUDED_SHEET_NAMES = ['sheet1', 'sheet', 'data', 'instruction', 'test']
-        question_norms = []
-        for ws in all_ws:
-            sheet_name = ws.title.strip().lower()
-            if sheet_name in EXCLUDED_SHEET_NAMES:
-                continue
-            if '-' in ws.title:
-                q, norm = ws.title.split('-', 1)
-                question_norms.append((q.strip(), norm.strip(), ws.title))
-            else:
-                question_norms.append((ws.title.strip(), "", ws.title))
-        if not question_norms:
-            st.warning("No question sheets found in this month file.")
+        question_sheets = [ws.title for ws in all_ws if is_question_sheet(ws)]
+        if not question_sheets:
+            st.warning("No question sheets found.")
             return
-        questions = sorted(list(set(q for q, norm, t in question_norms)))
-        selected_question = st.selectbox("Select Question", questions)
-        available_norms = sorted(list(set(norm for q, norm, t in question_norms if q == selected_question and norm)))
-        if available_norms:
-            selected_norm = st.selectbox("Select Normalisation", available_norms)
+        months = get_month_list(question_sheets)
+        if months:
+            selected_month = st.selectbox("Select Month", months)
+            question_sheets_filtered = [qs for qs in question_sheets if qs.startswith(selected_month)]
         else:
-            selected_norm = ""
-            st.info("No normalisation found in question name.")
-        selected_tab = next((t for q, norm, t in question_norms if q == selected_question and (norm == selected_norm or not available_norms)), None)
-        if not selected_tab:
-            st.warning("No matching worksheet found.")
+            st.warning("No valid months found.")
             return
-
-        data = load_pivot_data_by_id(gc, selected_file['id'], selected_tab)
+        if not question_sheets_filtered:
+            st.warning("No sheets found for selected month.")
+            return
+        selected_question = st.selectbox("Select Question Sheet", question_sheets_filtered)
+        data = load_pivot_data_by_id(gc, selected_file['id'], selected_question)
+        norm_cols = [col for col in data[0] if col and "norm" in str(col).lower()]
+        selected_norm = None
+        if norm_cols:
+            selected_norm = st.selectbox("Select Normalisation Column", norm_cols)
+        else:
+            st.info("No normalisation columns detected in this sheet.")
         blocks = find_cuts_and_blocks(data)
-        if not blocks:
-            st.warning("No summary report types found.")
-            return
-
-        def is_state_summary(label):
-            label_lower = label.strip().lower()
-            allowed = [
-                'state summary',
-                'state + religion summary',
-                'state + gender summary',
-                'state + age summary',
-                'state + community summary'
-            ]
-            return any(label_lower.startswith(a) for a in allowed)
-
-        state_block_labels = [b["label"] for b in blocks if is_state_summary(b["label"])]
-        if not state_block_labels:
-            st.warning("No State Summary blocks found.")
-            return
-        selected_block_label = st.selectbox("Select Summary Report", state_block_labels)
-
-        selected_block = next(b for b in blocks if b["label"] == selected_block_label)
-        df = extract_block_df(data, selected_block)
-        df = df.loc[~df[df.columns[0]].astype(str).str.lower().str.contains("grand total")]
-        df = df.drop(columns=[col for col in df.columns if "grand total" in str(col).lower()], errors="ignore")
-        st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_block_label}{(" (" + selected_norm + ")") if selected_norm else ""}</h4>', unsafe_allow_html=True)
-        show_centered_dataframe(df)
-        st.markdown('</div>', unsafe_allow_html=True)
-        plot_horizontal_bar_plotly(df, key="stratified_horizontal_bar")
-        st.markdown("---")
-
+        state_blocks = [b for b in blocks if b["label"].lower().startswith("state")]
+        if state_blocks:
+            state_labels = [b["label"] for b in state_blocks]
+            selected_state_label = st.selectbox("Select State Wide Survey Report", state_labels)
+            selected_state_block = next(b for b in state_blocks if b["label"] == selected_state_label)
+            df = extract_block_df(data, selected_state_block)
+            if not df.empty:
+                if selected_norm:
+                    keep_cols = [df.columns[0], selected_norm] + [
+                        col for col in df.columns if col != df.columns[0] and col != selected_norm and col not in norm_cols
+                    ]
+                    df = df[[c for c in keep_cols if c in df.columns]]
+                st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_state_label}{(" (" + selected_norm + ")") if selected_norm else ""}</h4>', unsafe_allow_html=True)
+                show_centered_dataframe(df)
+                st.markdown('</div>', unsafe_allow_html=True)
+                plot_horizontal_bar_plotly(df, key=f"state_{selected_state_label}_plot", colorway="plotly")
+                st.markdown("---")
+        else:
+            st.info("No State Wide Survey Reports found in this sheet.")
         geo_sections = [("District", "District"), ("Zone", "Zone"), ("Region", "Region"), ("AC", "Assembly Constituency")]
         for block_prefix, geo_name in geo_sections:
             with st.expander(f"{geo_name} Wise Survey Reports ({block_prefix})", expanded=False):
@@ -480,8 +365,14 @@ def Stratified_dashboard(gc):
                 selected_block_label = st.selectbox(f"Select {geo_name} Report Type", block_labels, key=f"{block_prefix}_report_type")
                 block = next(b for b in geo_blocks if b["label"] == selected_block_label)
                 df = extract_block_df(data, block)
-                df = df.loc[~df[df.columns[0]].astype(str).str.lower().str.contains("grand total")]
-                df = df.drop(columns=[col for col in df.columns if "grand total" in str(col).lower()], errors="ignore")
+                if df.empty:
+                    st.warning(f"No data table found for {selected_block_label}.")
+                    continue
+                if selected_norm:
+                    keep_cols = [df.columns[0], selected_norm] + [
+                        col for col in df.columns if col != df.columns[0] and col != selected_norm and col not in norm_cols
+                    ]
+                    df = df[[c for c in keep_cols if c in df.columns]]
                 geo_col = df.columns[0]
                 geo_values = df[geo_col].dropna().unique().tolist()
                 select_all = st.checkbox(f"Select all {geo_name}s", value=True, key=f"{block_prefix}_select_all")
@@ -499,22 +390,86 @@ def Stratified_dashboard(gc):
                 st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_block_label}{(" (" + selected_norm + ")") if selected_norm else ""}</h4>', unsafe_allow_html=True)
                 show_centered_dataframe(filtered_df)
                 st.markdown('</div>', unsafe_allow_html=True)
-                plot_horizontal_bar_plotly(filtered_df, key=f"{block_prefix}_{selected_block_label}_geo_horizontal_bar")
+                plot_horizontal_bar_plotly(filtered_df, key=f"{block_prefix}_{selected_block_label}_geo_summary_plot", colorway="plotly")
         cut_labels = ["Religion", "Gender", "Age", "Community"]
         other_cuts = [b for b in blocks if any(cl.lower() == b["label"].lower() for cl in cut_labels)]
         if other_cuts:
             with st.expander("Other Cuts Summary", expanded=False):
                 for block in other_cuts:
                     df = extract_block_df(data, block)
-                    df = df.loc[~df[df.columns[0]].astype(str).str.lower().str.contains("grand total")]
-                    df = df.drop(columns=[col for col in df.columns if "grand total" in str(col).lower()], errors="ignore")
+                    if df.empty: continue
+                    if selected_norm:
+                        keep_cols = [df.columns[0], selected_norm] + [
+                            col for col in df.columns if col != df.columns[0] and col != selected_norm and col not in norm_cols
+                        ]
+                        df = df[[c for c in keep_cols if c in df.columns]]
                     st.markdown(f'<div class="center-table"><h4 style="text-align:center">{block["label"]}{(" (" + selected_norm + ")") if selected_norm else ""}</h4>', unsafe_allow_html=True)
                     show_centered_dataframe(df)
                     st.markdown('</div>', unsafe_allow_html=True)
-                    plot_horizontal_bar_plotly(df, key=f"cut_{block['label']}_horizontal_bar")
+                    plot_horizontal_bar_plotly(df, key=f"cut_{block['label']}_plot", colorway="plotly")
                     st.markdown("---")
     except Exception as e:
-        st.error(f"Could not load Stratified survey report: {e}")
+        st.error(f"Could not load individual survey report: {e}")
+
+def nilambur_bypoll_dashboard(gc):
+    st.markdown('<div class="section-header">Nilambur Bypoll Survey</div>', unsafe_allow_html=True)
+    selected_file = select_gsheet_file(section="Nilambur Bypoll Survey")
+    if not selected_file:
+        st.info("No Nilambur bypoll file found.")
+        return
+    try:
+        all_ws = gc.open_by_key(selected_file['id']).worksheets()
+        nilambur_tabs = [ws.title for ws in all_ws if ws.title.lower().startswith("nilambur - ")]
+        question_norm_tabs = []
+        for t in nilambur_tabs:
+            parts = t.split(" - ")
+            if len(parts) >= 3:
+                question = parts[1].strip()
+                norm = parts[2].strip()
+                question_norm_tabs.append((question, norm, t))
+        question_map = {}
+        for question, norm, tab in question_norm_tabs:
+            if question not in question_map:
+                question_map[question] = []
+            question_map[question].append((norm, tab))
+        question_options = list(question_map.keys())
+        if not question_options:
+            st.warning("No Nilambur Bypoll Survey tabs found in this workbook.")
+            return
+        selected_question = st.selectbox("Select Nilambur Question", question_options)
+        norms_for_question = [norm for norm, tab in question_map[selected_question]]
+        norm_option = st.selectbox("Select Normalisation", norms_for_question)
+        tab_for_selection = next(tab for norm, tab in question_map[selected_question] if norm == norm_option)
+        data = load_pivot_data_by_id(gc, selected_file['id'], tab_for_selection)
+        summary_options = ["Overall Summary", "Religion Summary", "Gender Summary", "Age Summary", "Community Summary"]
+        summary_label_map = {
+            "Overall Summary": ["overall summary", "state summary", "all"],
+            "Religion Summary": ["religion summary", "state + religion summary", "religion"],
+            "Gender Summary": ["gender summary", "state + gender summary", "gender"],
+            "Age Summary": ["age summary", "state + age summary", "age"],
+            "Community Summary": ["community summary", "state + community summary", "community"]
+        }
+        summary_selected = st.selectbox("Choose Summary Type", summary_options)
+        allowed_block_labels = summary_label_map.get(summary_selected, [])
+        blocks = find_cuts_and_blocks(data)
+        found = False
+        for block in blocks:
+            if any(lbl in block["label"].lower() for lbl in allowed_block_labels):
+                df = extract_block_df(data, block)
+                if df.empty:
+                    st.warning("No data table found for this summary.")
+                    return
+                display_label = block["label"]
+                st.markdown(f'<div class="center-table"><h4 style="text-align:center">{display_label} ({norm_option})</h4>', unsafe_allow_html=True)
+                show_centered_dataframe(df)
+                st.markdown('</div>', unsafe_allow_html=True)
+                plot_horizontal_bar_plotly(df, key=f"nilambur_{block['label']}_norm_plot", colorway="plotly")
+                found = True
+                break
+        if not found:
+            st.warning("No data block found for summary type in this tab.")
+    except Exception as e:
+        st.error(f"Could not load Nilambur Bypoll Survey: {e}")
 
 def login_form():
     st.markdown("<h2 style='text-align: center;'>Login</h2>", unsafe_allow_html=True)
@@ -560,14 +515,15 @@ def password_setup_form():
 
 def main_dashboard(gc):
     st.markdown("<h1 class='dashboard-title' style='text-align:center;'>Kerala Survey Dashboard</h1>", unsafe_allow_html=True)
-    map_path = "kerala-vector-illustration.jpg"
+    st.markdown("<h2 style='text-align: center; color: #22356f;'>Monthly Survey Analysis</h2>", unsafe_allow_html=True)
+    map_path = "kerala_political_map.png"
     if os.path.exists(map_path):
         with open(map_path, "rb") as imgf:
             imgdata = base64.b64encode(imgf.read()).decode('utf-8')
         st.markdown(
             f'''
             <div style="display: flex; justify-content: center;">
-                <img src="data:image/jpeg;base64,{imgdata}" width="320" alt="Kerala Map"/>
+                <img src="data:image/png;base64,{imgdata}" width="320" alt="Kerala Map"/>
             </div>
             ''',
             unsafe_allow_html=True
@@ -577,18 +533,18 @@ def main_dashboard(gc):
         "",
         [
             "Periodic Popularity Poll Ticker",
-            "Stratified Survey Reports"
+            "Individual Survey Reports",
+            "Nilambur Bypoll Survey"
         ]
     )
     if choice == "Periodic Popularity Poll Ticker":
         comparative_dashboard(gc)
-    elif choice == "Stratified Survey Reports":
-        Stratified_dashboard(gc)
+    elif choice == "Individual Survey Reports":
+        individual_dashboard(gc)
+    elif choice == "Nilambur Bypoll Survey":
+        nilambur_bypoll_dashboard(gc)
 
 if __name__ == "__main__":
-    # Set the Kerala illustration as the background
-    set_background("ChatGPT Image Jul 7, 2025, 05_05_56 PM.png")  # <-- Use the exact name of your uploaded file
-
     st.set_page_config(page_title="Kerala Survey Dashboard", layout="wide")
     if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
     if 'username' not in st.session_state: st.session_state['username'] = ""
