@@ -8,6 +8,8 @@ import tempfile
 import plotly.express as px
 import base64
 from googleapiclient.discovery import build
+from fpdf import FPDF
+from io import BytesIO
 
 # Set background for the entire Streamlit app using your provided image
 def set_background(image_path: str):
@@ -324,6 +326,32 @@ def load_pivot_data_by_id(gc, file_id, worksheet_name):
     data = ws.get_all_values()
     return data
 
+def generate_table_pdf(df, title):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(0, 10, title, ln=True, align='C')
+    pdf.ln(10)
+    pdf.set_font("Arial", size=12)
+    
+    # Add table header
+    col_width = pdf.w / max(1, len(df.columns)) - 1
+    for col in df.columns:
+        pdf.cell(col_width, 10, str(col), border=1)
+    pdf.ln()
+    
+    # Add table data
+    for _, row in df.iterrows():
+        for item in row:
+            pdf.cell(col_width, 10, str(item)[:20] if pd.notna(item) else "", border=1)
+        pdf.ln()
+    
+    pdf_output = BytesIO()
+    pdf_str = pdf.output(dest='S').encode('latin1')
+    pdf_output.write(pdf_str)
+    pdf_output.seek(0)
+    return pdf_output
+
 def comparative_dashboard(gc):
     files = get_gsheet_metadata(GOOGLE_DRIVE_OUTPUT_FOLDER)
     selected_file = next((f for f in files if f["name"] == "Kerala_Survey_Comparative"), None)
@@ -390,6 +418,8 @@ def comparative_dashboard(gc):
         plot_trend_by_party(df_final, key="comparative_trend_party", show_margin_calculator=True)
         csv = df_final.to_csv(index=False).encode('utf-8')
         st.download_button("Download Table as CSV", csv, f"{selected_question}_{selected_norm}_comparative_table.csv", "text/csv")
+        pdf_buffer = generate_table_pdf(df_final, f"{selected_question} ({selected_norm}) Comparative Table")
+        st.download_button("Download Table as PDF", pdf_buffer, f"{selected_question}_{selected_norm}_comparative_table.pdf", "application/pdf")
         st.markdown("---")
 
     except Exception as e:
@@ -469,6 +499,8 @@ def Stratified_dashboard(gc):
         plot_horizontal_bar_plotly(df, key="stratified_horizontal_bar")
         csv = df.to_csv(index=False).encode('utf-8')
         st.download_button("Download Table as CSV", csv, f"{selected_block_label}_{selected_norm}_table.csv", "text/csv")
+        pdf_buffer = generate_table_pdf(df, f"{selected_block_label} {selected_norm}")
+        st.download_button("Download Table as PDF", pdf_buffer, f"{selected_block_label}_{selected_norm}_table.pdf", "application/pdf")
         st.markdown("---")
 
         geo_sections = [("District", "District"), ("Zone", "Zone"), ("Region", "Region"), ("AC", "Assembly Constituency")]
@@ -504,6 +536,8 @@ def Stratified_dashboard(gc):
                 plot_horizontal_bar_plotly(filtered_df, key=f"{block_prefix}_{selected_block_label}_geo_horizontal_bar")
                 csv = filtered_df.to_csv(index=False).encode('utf-8')
                 st.download_button("Download Table as CSV", csv, f"{selected_block_label}_{selected_norm}_{geo_name}_table.csv", "text/csv")
+                pdf_buffer = generate_table_pdf(filtered_df, f"{selected_block_label} {selected_norm} - {geo_name}")
+                st.download_button("Download Table as PDF", pdf_buffer, f"{selected_block_label}_{selected_norm}_{geo_name}_table.pdf", "application/pdf")
         cut_labels = ["Religion", "Gender", "Age", "Community"]
         other_cuts = [b for b in blocks if any(cl.lower() == b["label"].lower() for cl in cut_labels)]
         if other_cuts:
@@ -518,6 +552,8 @@ def Stratified_dashboard(gc):
                     plot_horizontal_bar_plotly(df, key=f"cut_{block['label']}_horizontal_bar")
                     csv = df.to_csv(index=False).encode('utf-8')
                     st.download_button("Download Table as CSV", csv, f"{block['label']}_{selected_norm}_table.csv", "text/csv")
+                    pdf_buffer = generate_table_pdf(df, f"{block['label']} {selected_norm}")
+                    st.download_button("Download Table as PDF", pdf_buffer, f"{block['label']}_{selected_norm}_table.pdf", "text/csv")
                     st.markdown("---")
     except Exception as e:
         st.error(f"Could not load Stratified survey report: {e}")
