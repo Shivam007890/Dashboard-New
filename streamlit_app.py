@@ -328,24 +328,33 @@ def load_pivot_data_by_id(gc, file_id, worksheet_name):
 
 def generate_table_pdf(df, title):
     pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     pdf.set_font("Arial", 'B', 16)
     pdf.cell(0, 10, title, ln=True, align='C')
     pdf.ln(10)
     pdf.set_font("Arial", size=12)
-    
-    # Add table header
-    col_width = pdf.w / max(1, len(df.columns)) - 1
+
+    # Calculate dynamic column widths based on content
+    col_widths = []
     for col in df.columns:
-        pdf.cell(col_width, 10, str(col), border=1)
+        max_length = max(df[col].astype(str).apply(len).max(), len(str(col)))
+        col_width = min(max_length * 3, 40)  # Cap width at 40 units, adjust multiplier as needed
+        col_widths.append(col_width)
+
+    # Add table header
+    for i, col in enumerate(df.columns):
+        pdf.cell(col_widths[i], 10, str(col), border=1, align='C')
     pdf.ln()
-    
-    # Add table data
+
+    # Add table data with text wrapping
     for _, row in df.iterrows():
-        for item in row:
-            pdf.cell(col_width, 10, str(item)[:20] if pd.notna(item) else "", border=1)
+        for i, item in enumerate(row):
+            wrapped_text = str(item) if pd.notna(item) else ""
+            pdf.multi_cell(col_widths[i], 5, wrapped_text, border=1, align='C', max_line_height=5)
+            pdf.x = pdf.get_x() - col_widths[i]  # Move back to start of next column
         pdf.ln()
-    
+
     pdf_output = BytesIO()
     pdf_str = pdf.output(dest='S').encode('latin1')
     pdf_output.write(pdf_str)
@@ -553,7 +562,7 @@ def Stratified_dashboard(gc):
                     csv = df.to_csv(index=False).encode('utf-8')
                     st.download_button("Download Table as CSV", csv, f"{block['label']}_{selected_norm}_table.csv", "text/csv")
                     pdf_buffer = generate_table_pdf(df, f"{block['label']} {selected_norm}")
-                    st.download_button("Download Table as PDF", pdf_buffer, f"{block['label']}_{selected_norm}_table.pdf", "text/csv")
+                    st.download_button("Download Table as PDF", pdf_buffer, f"{block['label']}_{selected_norm}_table.pdf", "application/pdf")
                     st.markdown("---")
     except Exception as e:
         st.error(f"Could not load Stratified survey report: {e}")
