@@ -334,20 +334,17 @@ def generate_pdf_report(df=None, figs=None):
     # Title page
     pdf.add_page()
     pdf.set_font("Arial", 'B', 16)
-    pdf.cell(0, 10, "Kerala Survey Dashboard Report", ln=True, align='C')
+    pdf.cell(0, 10, "Comparative Analysis Report", ln=True, align='C')
     pdf.ln(10)
     pdf.set_font("Arial", size=12)
-    pdf.multi_cell(0, 10, "This PDF simulates the Kerala Survey Dashboard layout. Visuals (charts, buttons) are not included due to technical limitations. See manual workaround below.")
-    pdf.ln(5)
-    pdf.set_font("Arial", size=10)
-    pdf.multi_cell(0, 10, "Workaround: Use a browser screenshot tool (e.g., press 'Print Screen' or use 'Snipping Tool') to capture the full dashboard, then save as PDF.")
+    pdf.multi_cell(0, 10, "This PDF contains the Comparative Analysis table and a placeholder for the graph. Visuals are not included due to technical limitations.")
     pdf.ln(10)
 
-    # Dashboard layout simulation
+    # Comparative Analysis table
     if df is not None and not df.empty:
         pdf.add_page()
         pdf.set_font("Arial", 'B', 14)
-        pdf.cell(0, 10, "Section: Main Data Table", ln=True, align='L')
+        pdf.cell(0, 10, "Comparative Analysis Table", ln=True, align='L')
         pdf.ln(5)
         pdf.set_font("Arial", size=10)
         col_width = pdf.w / (len(df.columns) + 1)
@@ -356,36 +353,22 @@ def generate_pdf_report(df=None, figs=None):
                 pdf.cell(col_width, 10, str(item)[:20], border=1)
             pdf.ln()
         pdf.ln(10)
-        pdf.multi_cell(0, 10, "This section includes a horizontal bar chart (not rendered) and interactive filters above the table.")
 
-    # Simulate dashboard sections
-    sections = [
-        "State Summary", "District-wise Reports", "Zone-wise Reports",
-        "Region-wise Reports", "AC-wise Reports", "Other Cuts Summary"
-    ]
-    for section in sections:
-        pdf.add_page()
-        pdf.set_font("Arial", 'B', 14)
-        pdf.cell(0, 10, f"Section: {section}", ln=True, align='L')
-        pdf.ln(5)
-        pdf.set_font("Arial", size=10)
-        pdf.multi_cell(0, 10, f"This section displays a data table with a horizontal bar chart below it. Interactive expanders and multi-select filters are available on the live dashboard.")
-        if section == "District-wise Reports":
-            pdf.ln(5)
-            pdf.multi_cell(0, 10, "Example: Includes options to select Districts with a checkbox for 'Select all' and a multi-select dropdown.")
-
-    # Comparative dashboard section
-    pdf.add_page()
-    pdf.set_font("Arial", 'B', 14)
-    pdf.cell(0, 10, "Section: Comparative Dashboard", ln=True, align='L')
-    pdf.ln(5)
-    pdf.set_font("Arial", size=10)
-    pdf.multi_cell(0, 10, "This section shows a line chart for party trends and a Margin Calculator with two dropdowns for time points and a bar chart for margins.")
+    # Graph placeholder
+    if figs is not None and any(figs):
+        for i, fig in enumerate(figs, 1):
+            if fig is not None:
+                pdf.add_page()
+                pdf.set_font("Arial", 'B', 14)
+                pdf.cell(0, 10, f"Comparative Analysis Graph - Page {i}", ln=True, align='L')
+                pdf.ln(5)
+                pdf.set_font("Arial", size=10)
+                pdf.multi_cell(0, 10, "Note: The graph (Party and Leader Popularity Tracker) could not be included due to issues with the 'kaleido' package. View the dashboard interactively for the visual.")
 
     # Final notes
     pdf.add_page()
     pdf.set_font("Arial", size=10)
-    pdf.multi_cell(0, 10, "This PDF is a textual representation of the dashboard. Full visuals (charts, maps, buttons) cannot be captured automatically without additional tools. Use the manual screenshot method for a complete view.")
+    pdf.multi_cell(0, 10, "This PDF represents the Comparative Analysis section. The Margin Calculator will be included in a separate request. For full visuals, use the interactive dashboard.")
 
     # Save PDF to a BytesIO buffer
     pdf_output = BytesIO()
@@ -457,16 +440,16 @@ def comparative_dashboard(gc):
         show_centered_dataframe(df_final)
         st.markdown('</div>', unsafe_allow_html=True)
 
-        fig, margin_fig = plot_trend_by_party(df_final, key="comparative_trend_party", show_margin_calculator=True)
+        fig, margin_fig = plot_trend_by_party(df_final, key="comparative_trend_party", show_margin_calculator=False)
         csv = df_final.to_csv(index=False).encode('utf-8')
         st.download_button("Download CSV", csv, f"{selected_question}_{selected_norm}_comparative.csv", "text/csv")
         
-        # PDF Download Button for Comparative Dashboard
-        pdf_buffer = generate_pdf_report(df=df_final, figs=[fig, margin_fig] if fig and margin_fig else [fig])
+        # PDF Download Button for Comparative Analysis (Table and Graph only)
+        pdf_buffer = generate_pdf_report(df=df_final, figs=[fig] if fig else [])
         st.download_button(
-            label="Download Dashboard as PDF",
+            label="Download Comparative Analysis as PDF",
             data=pdf_buffer,
-            file_name=f"Comparative_Dashboard_{selected_question}_{selected_norm}.pdf",
+            file_name=f"Comparative_Analysis_{selected_question}_{selected_norm}.pdf",
             mime="application/pdf"
         )
         st.markdown("---")
