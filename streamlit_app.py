@@ -348,7 +348,9 @@ def generate_pdf_report():
     
     # Save PDF to a BytesIO buffer
     pdf_output = BytesIO()
-    pdf.output(pdf_output)
+    pdf.output(dest='S').encode('latin1')  # Output to string (BytesIO-compatible)
+    pdf_str = pdf.output(dest='S').encode('latin1')  # Get the PDF as a string
+    pdf_output.write(pdf_str)  # Write to BytesIO
     pdf_output.seek(0)
     return pdf_output
 
@@ -393,7 +395,7 @@ def comparative_dashboard(gc):
             df = extract_block_df(data, block)
             df = df.loc[~df[df.columns[0]].str.lower().str.contains("grand total|sample count")]
             df = df.drop(columns=[col for col in df.columns if "grand total" in str(col).lower() or "sample" in str(col).lower()], errors="ignore")
-            if "Month" not in df.columns and "month" in df.columns:
+            if "Month" not in df.columns and "month" not in df.columns:
                 month = tab_entry['tab'].split()[-3].replace("-", "_") if len(tab_entry['tab'].split()) > 2 else ""
                 df.insert(0, "Month", month)
             all_data.append(df)
