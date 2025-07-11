@@ -362,17 +362,21 @@ def generate_pdf_report(df=None, figs=None):
     
     # Adding Plots if available and Kaleido is installed
     if figs is not None and KALEIDO_AVAILABLE:
-        for i, fig in enumerate(figs):
-            if fig is not None:
-                img_path = f"temp_plot_{i}.png"
-                fig.write_image(img_path)
-                pdf.image(img_path, x=10, y=None, w=180)
-                os.remove(img_path)  # Clean up temporary file
-                pdf.ln(100)  # Adjust spacing for next image
+        try:
+            for i, fig in enumerate(figs):
+                if fig is not None:
+                    img_path = f"temp_plot_{i}.png"
+                    fig.write_image(img_path)
+                    pdf.image(img_path, x=10, y=None, w=180)
+                    os.remove(img_path)  # Clean up temporary file
+                    pdf.ln(100)  # Adjust spacing for next image
+        except Exception as e:
+            pdf.set_font("Arial", size=10)
+            pdf.multi_cell(0, 10, f"Error exporting plots to PDF: {str(e)}. Please ensure Kaleido is correctly installed and compatible.")
     elif figs is not None and not KALEIDO_AVAILABLE:
         pdf.set_font("Arial", size=10)
-        pdf.multi_cell(0, 10, "Note: Plotly figures could not be included in this PDF because the 'kaleido' package is not installed. "
-                             "Please install it using 'pip install --upgrade kaleido' to include charts.")
+        pdf.multi_cell(0, 10, "Note: Plotly figures could not be included in this PDF because the 'kaleido' package is not installed or not working. "
+                             "Please install it using 'pip install --upgrade kaleido' and ensure compatibility with your Python environment.")
     
     # Adding Note
     pdf.set_font("Arial", size=10)
