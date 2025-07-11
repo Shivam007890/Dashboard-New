@@ -330,16 +330,19 @@ def load_pivot_data_by_id(gc, file_id, worksheet_name):
 
 def generate_pdf_report(df=None, figs=None):
     pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=12)
     
-    # Adding Title
+    # Add title page
+    pdf.add_page()
     pdf.set_font("Arial", 'B', 16)
     pdf.cell(0, 10, "Kerala Survey Dashboard Report", ln=True, align='C')
     pdf.ln(10)
-    
-    # Adding Data Table if available
+    pdf.set_font("Arial", size=12)
+    pdf.multi_cell(0, 10, "This is a paginated report of the Kerala Survey Dashboard. Each section is presented on a new page.")
+    pdf.ln(10)
+
+    # Add data table page
     if df is not None and not df.empty:
+        pdf.add_page()
         pdf.set_font("Arial", 'B', 12)
         pdf.cell(0, 10, "Data Table", ln=True, align='L')
         pdf.ln(5)
@@ -350,14 +353,20 @@ def generate_pdf_report(df=None, figs=None):
                 pdf.cell(col_width, 10, str(item)[:20], border=1)  # Limit text length for readability
             pdf.ln()
         pdf.ln(10)
-    
-    # Skip image export due to Kaleido issues
-    if figs is not None:
-        pdf.set_font("Arial", size=10)
-        pdf.multi_cell(0, 10, "Note: Plotly figures could not be included in this PDF due to issues with the 'kaleido' package. "
-                             "The PDF contains only the data table. For charts, please view the dashboard interactively.")
-    
-    # Adding Note
+
+    # Add pages for each figure
+    if figs is not None and any(figs):
+        for i, fig in enumerate(figs, 1):
+            if fig is not None:
+                pdf.add_page()
+                pdf.set_font("Arial", 'B', 12)
+                pdf.cell(0, 10, f"Chart - Page {i}", ln=True, align='L')
+                pdf.ln(5)
+                pdf.set_font("Arial", size=10)
+                pdf.multi_cell(0, 10, f"Note: This chart could not be included due to issues with the 'kaleido' package. Please view the dashboard interactively for the visual representation.")
+
+    # Add final notes page
+    pdf.add_page()
     pdf.set_font("Arial", size=10)
     pdf.multi_cell(0, 10, "This PDF contains a snapshot of the Kerala Survey Dashboard. "
                          "Due to limitations in capturing dynamic Streamlit content, some interactive elements may not be fully represented. "
