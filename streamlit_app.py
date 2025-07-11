@@ -331,47 +331,46 @@ def load_pivot_data_by_id(gc, file_id, worksheet_name):
 def generate_pdf_report(df=None, figs=None):
     pdf = FPDF()
     
-    # Add title page
+    # Title page
     pdf.add_page()
     pdf.set_font("Arial", 'B', 16)
     pdf.cell(0, 10, "Kerala Survey Dashboard Report", ln=True, align='C')
     pdf.ln(10)
     pdf.set_font("Arial", size=12)
-    pdf.multi_cell(0, 10, "This is a paginated report of the Kerala Survey Dashboard. Each section is presented on a new page.")
+    pdf.multi_cell(0, 10, "This PDF represents the Kerala Survey Dashboard layout. Visuals are not included due to technical limitations; please view the dashboard interactively.")
     pdf.ln(10)
 
-    # Add data table page
+    # Dashboard layout simulation
     if df is not None and not df.empty:
         pdf.add_page()
-        pdf.set_font("Arial", 'B', 12)
-        pdf.cell(0, 10, "Data Table", ln=True, align='L')
+        pdf.set_font("Arial", 'B', 14)
+        pdf.cell(0, 10, "Dashboard Section: Data Table", ln=True, align='L')
         pdf.ln(5)
         pdf.set_font("Arial", size=10)
         col_width = pdf.w / (len(df.columns) + 1)
         for row in df.itertuples(index=False):
             for item in row:
-                pdf.cell(col_width, 10, str(item)[:20], border=1)  # Limit text length for readability
+                pdf.cell(col_width, 10, str(item)[:20], border=1)
             pdf.ln()
         pdf.ln(10)
+        pdf.set_font("Arial", size=10)
+        pdf.multi_cell(0, 10, "Note: Charts and interactive elements (e.g., Margin Calculator) are not captured here. Refer to the live dashboard for visuals.")
 
-    # Add pages for each figure
-    if figs is not None and any(figs):
-        for i, fig in enumerate(figs, 1):
-            if fig is not None:
-                pdf.add_page()
-                pdf.set_font("Arial", 'B', 12)
-                pdf.cell(0, 10, f"Chart - Page {i}", ln=True, align='L')
-                pdf.ln(5)
-                pdf.set_font("Arial", size=10)
-                pdf.multi_cell(0, 10, f"Note: This chart could not be included due to issues with the 'kaleido' package. Please view the dashboard interactively for the visual representation.")
+    # Simulate additional sections
+    section_titles = ["State Summary", "District-wise Reports", "Zone-wise Reports", "Region-wise Reports", "AC-wise Reports", "Other Cuts Summary"]
+    for title in section_titles:
+        pdf.add_page()
+        pdf.set_font("Arial", 'B', 14)
+        pdf.cell(0, 10, f"Dashboard Section: {title}", ln=True, align='L')
+        pdf.ln(5)
+        pdf.set_font("Arial", size=10)
+        pdf.multi_cell(0, 10, f"This page represents the {title} section of the dashboard. Data tables and charts (e.g., horizontal bars) are available interactively but not rendered here due to technical limitations.")
 
-    # Add final notes page
+    # Final notes page
     pdf.add_page()
     pdf.set_font("Arial", size=10)
-    pdf.multi_cell(0, 10, "This PDF contains a snapshot of the Kerala Survey Dashboard. "
-                         "Due to limitations in capturing dynamic Streamlit content, some interactive elements may not be fully represented. "
-                         "For full details, please view the dashboard interactively.")
-    
+    pdf.multi_cell(0, 10, "This PDF provides a textual overview of the Kerala Survey Dashboard. Due to the inability to capture screenshots or render charts (e.g., without 'kaleido'), full visuals are not included. For a complete experience, please use the interactive dashboard.")
+
     # Save PDF to a BytesIO buffer
     pdf_output = BytesIO()
     pdf_str = pdf.output(dest='S').encode('latin1')
