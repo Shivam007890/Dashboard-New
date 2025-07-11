@@ -210,27 +210,20 @@ def plot_horizontal_bar_plotly(df, key=None):
     label_col = df.columns[0]
     df = df[~df[label_col].astype(str).str.lower().str.contains('difference')]
     exclude_keywords = ['sample', 'total', 'grand']
-    value_cols = [col for col in df.columns[1:] if not any(k in col.strip().lower() for k in exclude_keywords)]
-    color_map = []
-    for col in value_cols:
-        color_map.append(PARTY_COLORS.get(col, None))
-    colors = [c for c in color_map if c] + px.colors.qualitative.Plotly
-    n_bars = df.shape[0] if len(value_cols) == 1 else len(value_cols)
-    colors = colors * ((n_bars // len(colors)) + 1)
-    for col in value_cols:
-        try:
-            df[col] = df[col].astype(str).str.replace('%', '', regex=False).astype(float)
-        except Exception:
-            continue
+    value_cols = [col for col in df.columns[1:] if not any(k in col.strip().lower() for k in exclude_keywords) and col not in ['Sample Count']]
     if not value_cols:
         st.warning("No suitable value columns to plot.")
         return
+    # Convert percentage strings to floats
+    for col in value_cols:
+        df[col] = df[col].astype(str).str.replace('%', '').replace('', '0').astype(float)
+    color_map = [PARTY_COLORS.get(col, px.colors.qualitative.Plotly[i % len(px.colors.qualitative.Plotly)]) for i, col in enumerate(value_cols)]
     if len(value_cols) == 1:
         value_col = value_cols[0]
         fig = px.bar(
-            df, y=label_col, x=value_col, orientation='h', text=value_col,
+            df, y=label_col, x=value_col, orientation='h', text=df[value_col].apply(lambda x: f'{x:.1f}'),
             color=label_col,
-            color_discrete_sequence=colors
+            color_discrete_sequence=color_map
         )
         fig.update_layout(
             title=f"Distribution by {label_col}",
@@ -238,10 +231,10 @@ def plot_horizontal_bar_plotly(df, key=None):
             showlegend=False, bargap=0.2,
             plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa"
         )
-        fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
+        fig.update_traces(textposition='outside')
     else:
         long_df = df.melt(id_vars=label_col, value_vars=value_cols, var_name='Category', value_name='Value')
-        color_discrete_map = {cat: PARTY_COLORS.get(cat, None) for cat in long_df['Category'].unique()}
+        color_discrete_map = {cat: PARTY_COLORS.get(cat, px.colors.qualitative.Plotly[i % len(px.colors.qualitative.Plotly)]) for i, cat in enumerate(value_cols)}
         fig = px.bar(
             long_df, y=label_col, x='Value', color='Category',
             orientation='h', barmode='group', text='Value',
@@ -264,14 +257,12 @@ def plot_trend_by_party(df, key=None, show_margin_calculator=True):
         "LDF": "#db261d"
     }
     label_col = df.columns[0]
-    parties = [c for c in df.columns if c != label_col]
+    parties = [c for c in df.columns if c != label_col and c not in ['Sample Count']]
     plot_df = df.copy()
     for party in parties:
-        plot_df[party] = plot_df[party].astype(str).str.replace('%', '').astype(float)
+        plot_df[party] = plot_df[party].astype(str).str.replace('%', '').replace('', '0').astype(float)
     plot_df = plot_df.melt(id_vars=label_col, value_vars=parties, var_name="Party/Candidate", value_name="Value")
-    color_discrete_map = {}
-    for party in plot_df['Party/Candidate'].unique():
-        color_discrete_map[party] = party_colors.get(party, None)
+    color_discrete_map = {party: party_colors.get(party, px.colors.qualitative.Plotly[i % len(px.colors.qualitative.Plotly)]) for i, party in enumerate(parties)}
     fig = px.line(
         plot_df,
         x=label_col,
@@ -309,7 +300,7 @@ def plot_trend_by_party(df, key=None, show_margin_calculator=True):
             "Margin": (df_t2.loc[df_t1.index] - df_t1.values).round(2)
         })
         show_centered_dataframe(margin_df)
-        margin_colors = [party_colors.get(p, px.colors.qualitative.Plotly[i % 10]) for i, p in enumerate(margin_df["Party/Candidate"])]
+        margin_colors = [party_colors.get(p, px.colors.qualitative.Plotly[i % len(px.colors.qualitative.Plotly)]) for i, p in enumerate(margin_df["Party/Candidate"])]
         margin_fig = px.bar(
             margin_df,
             x="Party/Candidate",
