@@ -12,12 +12,7 @@ from fpdf import FPDF
 from io import BytesIO
 import time
 import sys
-
-try:
-    from plotly.io import to_image
-    KALEIDO_AVAILABLE = True
-except ImportError:
-    KALEIDO_AVAILABLE = False
+import matplotlib.pyplot as plt
 
 # Set background for the entire Streamlit app using your provided image
 def set_background(image_path: str):
@@ -206,58 +201,57 @@ def show_centered_dataframe(df):
     html += '</tbody></table></div>'
     st.markdown(html, unsafe_allow_html=True)
 
-def plot_horizontal_bar_plotly(df, key=None):
+def plot_horizontal_bar_matplotlib(df, key=None):
     label_col = df.columns[0]
     df = df[~df[label_col].astype(str).str.lower().str.contains('difference')]
     exclude_keywords = ['sample', 'total', 'grand']
     value_cols = [col for col in df.columns[1:] if not any(k in col.strip().lower() for k in exclude_keywords)]
-    color_map = []
-    for col in value_cols:
-        color_map.append(PARTY_COLORS.get(col, None))
-    colors = [c for c in color_map if c] + px.colors.qualitative.Plotly
-    n_bars = df.shape[0] if len(value_cols) == 1 else len(value_cols)
-    colors = colors * ((n_bars // len(colors)) + 1)
-    for col in value_cols:
-        try:
-            df[col] = df[col].astype(str).str.replace('%', '', regex=False).astype(float)
-        except Exception:
-            continue
+    
     if not value_cols:
         st.warning("No suitable value columns to plot.")
-        return
+        return None
+    
+    fig, ax = plt.subplots(figsize=(10, 6))
+    x = range(len(df[label_col]))
     if len(value_cols) == 1:
         value_col = value_cols[0]
-        fig = px.bar(
-            df, y=label_col, x=value_col, orientation='h', text=value_col,
-            color=label_col,
-            color_discrete_sequence=colors
-        )
-        fig.update_layout(
-            title=f"Distribution by {label_col}",
-            xaxis_title=value_col, yaxis_title=label_col,
-            showlegend=False, bargap=0.2,
-            plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa"
-        )
-        fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
+        try:
+            values = df[value_col].astype(float)
+            ax.barh(df[label_col], values, color=PARTY_COLORS.get(value_col, '#1f77b4'))
+            ax.set_title(f"Distribution by {label_col}")
+            ax.set_xlabel(value_col)
+            ax.set_ylabel(label_col)
+            for i, v in enumerate(values):
+                ax.text(v, i, f'{v:.1f}', va='center')
+        except ValueError:
+            st.warning(f"Cannot convert {value_col} to float for plotting.")
+            plt.close(fig)
+            return None
     else:
-        long_df = df.melt(id_vars=label_col, value_vars=value_cols, var_name='Category', value_name='Value')
-        color_discrete_map = {cat: PARTY_COLORS.get(cat, None) for cat in long_df['Category'].unique()}
-        fig = px.bar(
-            long_df, y=label_col, x='Value', color='Category',
-            orientation='h', barmode='group', text='Value',
-            color_discrete_map=color_discrete_map
-        )
-        fig.update_layout(
-            title=f"Distribution by {label_col}",
-            xaxis_title='Value', yaxis_title=label_col,
-            bargap=0.2, legend_title="Category",
-            plot_bgcolor="#f5f7fa", paper_bgcolor="#f5f7fa"
-        )
-        fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
-    st.plotly_chart(fig, use_container_width=True, key=key)
-    return fig
+        bottom = [0] * len(df)
+        for i, col in enumerate(value_cols):
+            try:
+                values = df[col].astype(float)
+                ax.barh(df[label_col], values, color=PARTY_COLORS.get(col, plt.cm.Set3(i)), label=col, left=bottom)
+                bottom = [b + v for b, v in zip(bottom, values)]
+                for j, v in enumerate(values):
+                    ax.text(bottom[j] - v/2, j, f'{v:.1f}', va='center', ha='center')
+            except ValueError:
+                st.warning(f"Cannot convert {col} to float for plotting.")
+                continue
+        ax.set_title(f"Distribution by {label_col}")
+        ax.set_xlabel("Value")
+        ax.set_ylabel(label_col)
+        ax.legend()
+    
+    ax.set_facecolor('#f5f7fa')
+    fig.patch.set_facecolor('#f5f7fa')
+    temp_file = f"temp_plot_{key}.png"
+    plt.savefig(temp_file, bbox_inches='tight', dpi=100)
+    plt.close(fig)
+    return temp_file
 
-def plot_trend_by_party(df, key=None, show_margin_calculator=True):
+def plot_trend_by_party_matplotlib(df, key=None, show_margin_calculator=True):
     party_colors = {
         "BJP": "#ff6d01",
         "UDF": "#4285f4",
@@ -268,68 +262,20 @@ def plot_trend_by_party(df, key=None, show_margin_calculator=True):
     plot_df = df.copy()
     for party in parties:
         plot_df[party] = plot_df[party].astype(str).str.replace('%', '').astype(float)
-    plot_df = plot_df.melt(id_vars=label_col, value_vars=parties, var_name="Party/Candidate", value_name="Value")
-    color_discrete_map = {}
-    for party in plot_df['Party/Candidate'].unique():
-        color_discrete_map[party] = party_colors.get(party, None)
-    fig = px.line(
-        plot_df,
-        x=label_col,
-        y="Value",
-        color="Party/Candidate",
-        markers=True,
-        labels={"Value": "Percentage", label_col: "Month"},
-        color_discrete_map=color_discrete_map
-    )
-    fig.update_layout(
-        title="Party and Leader Popularity Tracker",
-        plot_bgcolor="#f5f7fa",
-        paper_bgcolor="#f5f7fa",
-        legend_title="Party/Candidate"
-    )
-    st.plotly_chart(fig, use_container_width=True, key=key)
-
-    if show_margin_calculator:
-        st.markdown("### Margin Calculator")
-        timeline_options = plot_df[label_col].unique().tolist()
-        if len(timeline_options) < 2:
-            st.info("At least two time points are needed for margin calculation.")
-            return None, None
-        t1, t2 = st.selectbox("Select First Time Point", timeline_options, index=0, key=f"{key}_margin_t1"), \
-                 st.selectbox("Select Second Time Point", timeline_options, index=1, key=f"{key}_margin_t2")
-        if t1 == t2:
-            st.info("Select two different time points to compare margin.")
-            return None, None
-        df_t1 = plot_df[plot_df[label_col] == t1].set_index("Party/Candidate")["Value"]
-        df_t2 = plot_df[plot_df[label_col] == t2].set_index("Party/Candidate")["Value"]
-        margin_df = pd.DataFrame({
-            "Party/Candidate": df_t1.index,
-            f"{t1}": df_t1.values,
-            f"{t2}": df_t2.loc[df_t1.index].values,
-            "Margin": (df_t2.loc[df_t1.index] - df_t1.values).round(2)
-        })
-        show_centered_dataframe(margin_df)
-        margin_colors = [party_colors.get(p, px.colors.qualitative.Plotly[i % 10]) for i, p in enumerate(margin_df["Party/Candidate"])]
-        margin_fig = px.bar(
-            margin_df,
-            x="Party/Candidate",
-            y="Margin",
-            color="Party/Candidate",
-            color_discrete_sequence=margin_colors,
-            text="Margin"
-        )
-        margin_fig.update_layout(
-            title="Margin Between Selected Time Points",
-            xaxis_title="Party/Candidate",
-            yaxis_title="Margin",
-            showlegend=False,
-            plot_bgcolor="#f5f7fa",
-            paper_bgcolor="#f5f7fa"
-        )
-        margin_fig.update_traces(texttemplate='%{text:.2f}', textposition='outside')
-        st.plotly_chart(margin_fig, use_container_width=True, key=f"{key}_margin_chart")
-        return fig, margin_fig
-    return fig, None
+    
+    fig, ax = plt.subplots(figsize=(10, 6))
+    for party in parties:
+        ax.plot(plot_df[label_col], plot_df[party], marker='o', label=party, color=party_colors.get(party, None))
+    ax.set_title("Party and Leader Popularity Tracker")
+    ax.set_xlabel(label_col)
+    ax.set_ylabel("Percentage")
+    ax.legend()
+    ax.set_facecolor('#f5f7fa')
+    fig.patch.set_facecolor('#f5f7fa')
+    temp_file = f"temp_plot_{key}.png"
+    plt.savefig(temp_file, bbox_inches='tight', dpi=100)
+    plt.close(fig)
+    return temp_file
 
 def load_pivot_data_by_id(gc, file_id, worksheet_name):
     sh = gc.open_by_key(file_id)
@@ -337,7 +283,7 @@ def load_pivot_data_by_id(gc, file_id, worksheet_name):
     data = ws.get_all_values()
     return data
 
-def generate_pdf_report(df=None, figs=None):
+def generate_pdf_report(df=None, image_paths=None):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", size=12)
@@ -360,11 +306,12 @@ def generate_pdf_report(df=None, figs=None):
             pdf.ln()
         pdf.ln(10)
     
-    # Skip image export due to Kaleido issues
-    if figs is not None:
-        pdf.set_font("Arial", size=10)
-        pdf.multi_cell(0, 10, "Note: Plotly figures could not be included in this PDF due to issues with the 'kaleido' package. "
-                             "The PDF contains only the data table. For charts, please view the dashboard interactively.")
+    # Adding Images if available
+    if image_paths and all(os.path.exists(path) for path in image_paths):
+        for path in image_paths:
+            pdf.image(path, x=10, y=None, w=180)
+            pdf.ln(100)  # Adjust spacing for next image
+            os.remove(path)  # Clean up temporary file
     
     # Adding Note
     pdf.set_font("Arial", size=10)
@@ -442,12 +389,12 @@ def comparative_dashboard(gc):
         show_centered_dataframe(df_final)
         st.markdown('</div>', unsafe_allow_html=True)
 
-        fig, margin_fig = plot_trend_by_party(df_final, key="comparative_trend_party", show_margin_calculator=True)
+        trend_image = plot_trend_by_party_matplotlib(df_final, key="comparative_trend_party")
         csv = df_final.to_csv(index=False).encode('utf-8')
         st.download_button("Download CSV", csv, f"{selected_question}_{selected_norm}_comparative.csv", "text/csv")
         
         # PDF Download Button for Comparative Dashboard
-        pdf_buffer = generate_pdf_report(df=df_final, figs=[fig, margin_fig] if fig and margin_fig else [fig])
+        pdf_buffer = generate_pdf_report(df=df_final, image_paths=[trend_image] if trend_image else None)
         st.download_button(
             label="Download Dashboard as PDF",
             data=pdf_buffer,
@@ -525,15 +472,15 @@ def Stratified_dashboard(gc):
 
         selected_block = next(b for b in blocks if b["label"] == selected_block_label)
         df = extract_block_df(data, selected_block)
-        df = df.loc[~df[df.columns[0]].astype(str).str.lower().str.contains("grand total")]  # Line 556
+        df = df.loc[~df[df.columns[0]].astype(str).str.lower().str.contains("grand total")]
         df = df.drop(columns=[col for col in df.columns if "grand total" in str(col).lower()], errors="ignore")
         st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_block_label}{(" (" + selected_norm + ")") if selected_norm else ""}</h4>', unsafe_allow_html=True)
         show_centered_dataframe(df)
         st.markdown('</div>', unsafe_allow_html=True)
-        fig = plot_horizontal_bar_plotly(df, key="stratified_horizontal_bar")
+        bar_image = plot_horizontal_bar_matplotlib(df, key="stratified_horizontal_bar")
         
         # PDF Download Button for State Summary
-        pdf_buffer = generate_pdf_report(df=df, figs=[fig])
+        pdf_buffer = generate_pdf_report(df=df, image_paths=[bar_image] if bar_image else None)
         st.download_button(
             label="Download Dashboard as PDF",
             data=pdf_buffer,
@@ -572,10 +519,10 @@ def Stratified_dashboard(gc):
                 st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_block_label}{(" (" + selected_norm + ")") if selected_norm else ""}</h4>', unsafe_allow_html=True)
                 show_centered_dataframe(filtered_df)
                 st.markdown('</div>', unsafe_allow_html=True)
-                fig = plot_horizontal_bar_plotly(filtered_df, key=f"{block_prefix}_{selected_block_label}_geo_horizontal_bar")
+                bar_image = plot_horizontal_bar_matplotlib(filtered_df, key=f"{block_prefix}_{selected_block_label}_geo_horizontal_bar")
                 
                 # PDF Download Button for Geo Sections
-                pdf_buffer = generate_pdf_report(df=filtered_df, figs=[fig])
+                pdf_buffer = generate_pdf_report(df=filtered_df, image_paths=[bar_image] if bar_image else None)
                 st.download_button(
                     label="Download Dashboard as PDF",
                     data=pdf_buffer,
@@ -593,10 +540,10 @@ def Stratified_dashboard(gc):
                     st.markdown(f'<div class="center-table"><h4 style="text-align:center">{block["label"]}{(" (" + selected_norm + ")") if selected_norm else ""}</h4>', unsafe_allow_html=True)
                     show_centered_dataframe(df)
                     st.markdown('</div>', unsafe_allow_html=True)
-                    fig = plot_horizontal_bar_plotly(df, key=f"cut_{block['label']}_horizontal_bar")
+                    bar_image = plot_horizontal_bar_matplotlib(df, key=f"cut_{block['label']}_horizontal_bar")
                     
                     # PDF Download Button for Other Cuts
-                    pdf_buffer = generate_pdf_report(df=df, figs=[fig])
+                    pdf_buffer = generate_pdf_report(df=df, image_paths=[bar_image] if bar_image else None)
                     st.download_button(
                         label="Download Dashboard as PDF",
                         data=pdf_buffer,
