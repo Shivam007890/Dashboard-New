@@ -8,6 +8,9 @@ import tempfile
 import plotly.express as px
 import base64
 from googleapiclient.discovery import build
+from fpdf import FPDF
+from io import BytesIO
+import time
 
 # Set background for the entire Streamlit app using your provided image
 def set_background(image_path: str):
@@ -245,6 +248,7 @@ def plot_horizontal_bar_plotly(df, key=None):
         )
         fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     st.plotly_chart(fig, use_container_width=True, key=key)
+    return fig
 
 def plot_trend_by_party(df, key=None, show_margin_calculator=True):
     party_colors = {
@@ -317,12 +321,36 @@ def plot_trend_by_party(df, key=None, show_margin_calculator=True):
         )
         margin_fig.update_traces(texttemplate='%{text:.2f}', textposition='outside')
         st.plotly_chart(margin_fig, use_container_width=True, key=f"{key}_margin_chart")
+        return fig, margin_fig
+    return fig, None
 
 def load_pivot_data_by_id(gc, file_id, worksheet_name):
     sh = gc.open_by_key(file_id)
     ws = sh.worksheet(worksheet_name)
     data = ws.get_all_values()
     return data
+
+def generate_pdf_report():
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    
+    # Adding Title
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(0, 10, "Kerala Survey Dashboard Report", ln=True, align='C')
+    pdf.ln(10)
+    
+    # Adding Content (Placeholder for capturing dashboard content)
+    pdf.set_font("Arial", size=12)
+    pdf.multi_cell(0, 10, "This PDF contains a snapshot of the Kerala Survey Dashboard. "
+                         "Due to limitations in capturing dynamic Streamlit content, "
+                         "this is a basic representation. For full details, please view the dashboard interactively.")
+    
+    # Save PDF to a BytesIO buffer
+    pdf_output = BytesIO()
+    pdf.output(pdf_output)
+    pdf_output.seek(0)
+    return pdf_output
 
 def comparative_dashboard(gc):
     files = get_gsheet_metadata(GOOGLE_DRIVE_OUTPUT_FOLDER)
@@ -365,7 +393,7 @@ def comparative_dashboard(gc):
             df = extract_block_df(data, block)
             df = df.loc[~df[df.columns[0]].str.lower().str.contains("grand total|sample count")]
             df = df.drop(columns=[col for col in df.columns if "grand total" in str(col).lower() or "sample" in str(col).lower()], errors="ignore")
-            if "Month" not in df.columns and "month" not in df.columns:
+            if "Month" not in df.columns and "month" in df.columns:
                 month = tab_entry['tab'].split()[-3].replace("-", "_") if len(tab_entry['tab'].split()) > 2 else ""
                 df.insert(0, "Month", month)
             all_data.append(df)
@@ -387,9 +415,18 @@ def comparative_dashboard(gc):
         show_centered_dataframe(df_final)
         st.markdown('</div>', unsafe_allow_html=True)
 
-        plot_trend_by_party(df_final, key="comparative_trend_party", show_margin_calculator=True)
+        fig, margin_fig = plot_trend_by_party(df_final, key="comparative_trend_party", show_margin_calculator=True)
         csv = df_final.to_csv(index=False).encode('utf-8')
         st.download_button("Download CSV", csv, f"{selected_question}_{selected_norm}_comparative.csv", "text/csv")
+        
+        # PDF Download Button for Comparative Dashboard
+        pdf_buffer = generate_pdf_report()
+        st.download_button(
+            label="Download Dashboard as PDF",
+            data=pdf_buffer,
+            file_name=f"Comparative_Dashboard_{selected_question}_{selected_norm}.pdf",
+            mime="application/pdf"
+        )
         st.markdown("---")
 
     except Exception as e:
@@ -466,7 +503,16 @@ def Stratified_dashboard(gc):
         st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_block_label}{(" (" + selected_norm + ")") if selected_norm else ""}</h4>', unsafe_allow_html=True)
         show_centered_dataframe(df)
         st.markdown('</div>', unsafe_allow_html=True)
-        plot_horizontal_bar_plotly(df, key="stratified_horizontal_bar")
+        fig = plot_horizontal_bar_plotly(df, key="stratified_horizontal_bar")
+        
+        # PDF Download Button for State Summary
+        pdf_buffer = generate_pdf_report()
+        st.download_button(
+            label="Download Dashboard as PDF",
+            data=pdf_buffer,
+            file_name=f"Stratified_Dashboard_{selected_block_label}_{selected_norm}.pdf",
+            mime="application/pdf"
+        )
         st.markdown("---")
 
         geo_sections = [("District", "District"), ("Zone", "Zone"), ("Region", "Region"), ("AC", "Assembly Constituency")]
@@ -499,7 +545,16 @@ def Stratified_dashboard(gc):
                 st.markdown(f'<div class="center-table"><h4 style="text-align:center">{selected_block_label}{(" (" + selected_norm + ")") if selected_norm else ""}</h4>', unsafe_allow_html=True)
                 show_centered_dataframe(filtered_df)
                 st.markdown('</div>', unsafe_allow_html=True)
-                plot_horizontal_bar_plotly(filtered_df, key=f"{block_prefix}_{selected_block_label}_geo_horizontal_bar")
+                fig = plot_horizontal_bar_plotly(filtered_df, key=f"{block_prefix}_{selected_block_label}_geo_horizontal_bar")
+                
+                # PDF Download Button for Geo Sections
+                pdf_buffer = generate_pdf_report()
+                st.download_button(
+                    label="Download Dashboard as PDF",
+                    data=pdf_buffer,
+                    file_name=f"Stratified_{geo_name}_Dashboard_{selected_block_label}_{selected_norm}.pdf",
+                    mime="application/pdf"
+                )
         cut_labels = ["Religion", "Gender", "Age", "Community"]
         other_cuts = [b for b in blocks if any(cl.lower() == b["label"].lower() for cl in cut_labels)]
         if other_cuts:
@@ -511,7 +566,16 @@ def Stratified_dashboard(gc):
                     st.markdown(f'<div class="center-table"><h4 style="text-align:center">{block["label"]}{(" (" + selected_norm + ")") if selected_norm else ""}</h4>', unsafe_allow_html=True)
                     show_centered_dataframe(df)
                     st.markdown('</div>', unsafe_allow_html=True)
-                    plot_horizontal_bar_plotly(df, key=f"cut_{block['label']}_horizontal_bar")
+                    fig = plot_horizontal_bar_plotly(df, key=f"cut_{block['label']}_horizontal_bar")
+                    
+                    # PDF Download Button for Other Cuts
+                    pdf_buffer = generate_pdf_report()
+                    st.download_button(
+                        label="Download Dashboard as PDF",
+                        data=pdf_buffer,
+                        file_name=f"Stratified_{block['label']}_Dashboard_{selected_norm}.pdf",
+                        mime="application/pdf"
+                    )
                     st.markdown("---")
     except Exception as e:
         st.error(f"Could not load Stratified survey report: {e}")
@@ -586,7 +650,6 @@ def main_dashboard(gc):
         Stratified_dashboard(gc)
 
 if __name__ == "__main__":
-    # Set the Kerala illustration as the background
     st.set_page_config(page_title="Kerala Survey Dashboard", layout="wide")
     if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
     if 'username' not in st.session_state: st.session_state['username'] = ""
