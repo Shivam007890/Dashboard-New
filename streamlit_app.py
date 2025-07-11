@@ -11,7 +11,13 @@ from googleapiclient.discovery import build
 from fpdf import FPDF
 from io import BytesIO
 import time
-from plotly.io import to_image
+import sys
+
+try:
+    from plotly.io import to_image
+    KALEIDO_AVAILABLE = True
+except ImportError:
+    KALEIDO_AVAILABLE = False
 
 # Set background for the entire Streamlit app using your provided image
 def set_background(image_path: str):
@@ -354,8 +360,8 @@ def generate_pdf_report(df=None, figs=None):
             pdf.ln()
         pdf.ln(10)
     
-    # Adding Plots if available
-    if figs is not None:
+    # Adding Plots if available and Kaleido is installed
+    if figs is not None and KALEIDO_AVAILABLE:
         for i, fig in enumerate(figs):
             if fig is not None:
                 img_path = f"temp_plot_{i}.png"
@@ -363,6 +369,10 @@ def generate_pdf_report(df=None, figs=None):
                 pdf.image(img_path, x=10, y=None, w=180)
                 os.remove(img_path)  # Clean up temporary file
                 pdf.ln(100)  # Adjust spacing for next image
+    elif figs is not None and not KALEIDO_AVAILABLE:
+        pdf.set_font("Arial", size=10)
+        pdf.multi_cell(0, 10, "Note: Plotly figures could not be included in this PDF because the 'kaleido' package is not installed. "
+                             "Please install it using 'pip install --upgrade kaleido' to include charts.")
     
     # Adding Note
     pdf.set_font("Arial", size=10)
