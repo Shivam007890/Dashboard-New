@@ -337,14 +337,17 @@ def generate_pdf_report(df=None, figs=None):
     pdf.cell(0, 10, "Kerala Survey Dashboard Report", ln=True, align='C')
     pdf.ln(10)
     pdf.set_font("Arial", size=12)
-    pdf.multi_cell(0, 10, "This PDF represents the Kerala Survey Dashboard layout. Visuals are not included due to technical limitations; please view the dashboard interactively.")
+    pdf.multi_cell(0, 10, "This PDF simulates the Kerala Survey Dashboard layout. Visuals (charts, buttons) are not included due to technical limitations. See manual workaround below.")
+    pdf.ln(5)
+    pdf.set_font("Arial", size=10)
+    pdf.multi_cell(0, 10, "Workaround: Use a browser screenshot tool (e.g., press 'Print Screen' or use 'Snipping Tool') to capture the full dashboard, then save as PDF.")
     pdf.ln(10)
 
     # Dashboard layout simulation
     if df is not None and not df.empty:
         pdf.add_page()
         pdf.set_font("Arial", 'B', 14)
-        pdf.cell(0, 10, "Dashboard Section: Data Table", ln=True, align='L')
+        pdf.cell(0, 10, "Section: Main Data Table", ln=True, align='L')
         pdf.ln(5)
         pdf.set_font("Arial", size=10)
         col_width = pdf.w / (len(df.columns) + 1)
@@ -353,23 +356,36 @@ def generate_pdf_report(df=None, figs=None):
                 pdf.cell(col_width, 10, str(item)[:20], border=1)
             pdf.ln()
         pdf.ln(10)
-        pdf.set_font("Arial", size=10)
-        pdf.multi_cell(0, 10, "Note: Charts and interactive elements (e.g., Margin Calculator) are not captured here. Refer to the live dashboard for visuals.")
+        pdf.multi_cell(0, 10, "This section includes a horizontal bar chart (not rendered) and interactive filters above the table.")
 
-    # Simulate additional sections
-    section_titles = ["State Summary", "District-wise Reports", "Zone-wise Reports", "Region-wise Reports", "AC-wise Reports", "Other Cuts Summary"]
-    for title in section_titles:
+    # Simulate dashboard sections
+    sections = [
+        "State Summary", "District-wise Reports", "Zone-wise Reports",
+        "Region-wise Reports", "AC-wise Reports", "Other Cuts Summary"
+    ]
+    for section in sections:
         pdf.add_page()
         pdf.set_font("Arial", 'B', 14)
-        pdf.cell(0, 10, f"Dashboard Section: {title}", ln=True, align='L')
+        pdf.cell(0, 10, f"Section: {section}", ln=True, align='L')
         pdf.ln(5)
         pdf.set_font("Arial", size=10)
-        pdf.multi_cell(0, 10, f"This page represents the {title} section of the dashboard. Data tables and charts (e.g., horizontal bars) are available interactively but not rendered here due to technical limitations.")
+        pdf.multi_cell(0, 10, f"This section displays a data table with a horizontal bar chart below it. Interactive expanders and multi-select filters are available on the live dashboard.")
+        if section == "District-wise Reports":
+            pdf.ln(5)
+            pdf.multi_cell(0, 10, "Example: Includes options to select Districts with a checkbox for 'Select all' and a multi-select dropdown.")
 
-    # Final notes page
+    # Comparative dashboard section
+    pdf.add_page()
+    pdf.set_font("Arial", 'B', 14)
+    pdf.cell(0, 10, "Section: Comparative Dashboard", ln=True, align='L')
+    pdf.ln(5)
+    pdf.set_font("Arial", size=10)
+    pdf.multi_cell(0, 10, "This section shows a line chart for party trends and a Margin Calculator with two dropdowns for time points and a bar chart for margins.")
+
+    # Final notes
     pdf.add_page()
     pdf.set_font("Arial", size=10)
-    pdf.multi_cell(0, 10, "This PDF provides a textual overview of the Kerala Survey Dashboard. Due to the inability to capture screenshots or render charts (e.g., without 'kaleido'), full visuals are not included. For a complete experience, please use the interactive dashboard.")
+    pdf.multi_cell(0, 10, "This PDF is a textual representation of the dashboard. Full visuals (charts, maps, buttons) cannot be captured automatically without additional tools. Use the manual screenshot method for a complete view.")
 
     # Save PDF to a BytesIO buffer
     pdf_output = BytesIO()
