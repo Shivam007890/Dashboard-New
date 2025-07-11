@@ -389,7 +389,7 @@ def comparative_dashboard(gc):
 
         plot_trend_by_party(df_final, key="comparative_trend_party", show_margin_calculator=True)
         csv = df_final.to_csv(index=False).encode('utf-8')
-        st.download_button("Download CSV", csv, f"{selected_question}_{selected_norm}_comparative.csv", "text/csv")
+        st.download_button("Download Table as CSV", csv, f"{selected_question}_{selected_norm}_comparative_table.csv", "text/csv")
         st.markdown("---")
 
     except Exception as e:
@@ -467,6 +467,8 @@ def Stratified_dashboard(gc):
         show_centered_dataframe(df)
         st.markdown('</div>', unsafe_allow_html=True)
         plot_horizontal_bar_plotly(df, key="stratified_horizontal_bar")
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.download_button("Download Table as CSV", csv, f"{selected_block_label}_{selected_norm}_table.csv", "text/csv")
         st.markdown("---")
 
         geo_sections = [("District", "District"), ("Zone", "Zone"), ("Region", "Region"), ("AC", "Assembly Constituency")]
@@ -500,6 +502,8 @@ def Stratified_dashboard(gc):
                 show_centered_dataframe(filtered_df)
                 st.markdown('</div>', unsafe_allow_html=True)
                 plot_horizontal_bar_plotly(filtered_df, key=f"{block_prefix}_{selected_block_label}_geo_horizontal_bar")
+                csv = filtered_df.to_csv(index=False).encode('utf-8')
+                st.download_button("Download Table as CSV", csv, f"{selected_block_label}_{selected_norm}_{geo_name}_table.csv", "text/csv")
         cut_labels = ["Religion", "Gender", "Age", "Community"]
         other_cuts = [b for b in blocks if any(cl.lower() == b["label"].lower() for cl in cut_labels)]
         if other_cuts:
@@ -512,6 +516,8 @@ def Stratified_dashboard(gc):
                     show_centered_dataframe(df)
                     st.markdown('</div>', unsafe_allow_html=True)
                     plot_horizontal_bar_plotly(df, key=f"cut_{block['label']}_horizontal_bar")
+                    csv = df.to_csv(index=False).encode('utf-8')
+                    st.download_button("Download Table as CSV", csv, f"{block['label']}_{selected_norm}_table.csv", "text/csv")
                     st.markdown("---")
     except Exception as e:
         st.error(f"Could not load Stratified survey report: {e}")
