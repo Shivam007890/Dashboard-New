@@ -11,6 +11,7 @@ from googleapiclient.discovery import build
 from fpdf import FPDF
 from io import BytesIO
 import time
+from plotly.io import to_image
 
 # Set background for the entire Streamlit app using your provided image
 def set_background(image_path: str):
@@ -287,12 +288,12 @@ def plot_trend_by_party(df, key=None, show_margin_calculator=True):
         timeline_options = plot_df[label_col].unique().tolist()
         if len(timeline_options) < 2:
             st.info("At least two time points are needed for margin calculation.")
-            return
+            return None, None
         t1, t2 = st.selectbox("Select First Time Point", timeline_options, index=0, key=f"{key}_margin_t1"), \
                  st.selectbox("Select Second Time Point", timeline_options, index=1, key=f"{key}_margin_t2")
         if t1 == t2:
             st.info("Select two different time points to compare margin.")
-            return
+            return None, None
         df_t1 = plot_df[plot_df[label_col] == t1].set_index("Party/Candidate")["Value"]
         df_t2 = plot_df[plot_df[label_col] == t2].set_index("Party/Candidate")["Value"]
         margin_df = pd.DataFrame({
@@ -330,7 +331,7 @@ def load_pivot_data_by_id(gc, file_id, worksheet_name):
     data = ws.get_all_values()
     return data
 
-def generate_pdf_report():
+def generate_pdf_report(df=None, figs=None):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", size=12)
@@ -340,17 +341,39 @@ def generate_pdf_report():
     pdf.cell(0, 10, "Kerala Survey Dashboard Report", ln=True, align='C')
     pdf.ln(10)
     
-    # Adding Content (Placeholder for capturing dashboard content)
-    pdf.set_font("Arial", size=12)
+    # Adding Data Table if available
+    if df is not None and not df.empty:
+        pdf.set_font("Arial", 'B', 12)
+        pdf.cell(0, 10, "Data Table", ln=True, align='L')
+        pdf.ln(5)
+        pdf.set_font("Arial", size=10)
+        col_width = pdf.w / (len(df.columns) + 1)
+        for row in df.itertuples(index=False):
+            for item in row:
+                pdf.cell(col_width, 10, str(item)[:20], border=1)  # Limit text length for readability
+            pdf.ln()
+        pdf.ln(10)
+    
+    # Adding Plots if available
+    if figs is not None:
+        for i, fig in enumerate(figs):
+            if fig is not None:
+                img_path = f"temp_plot_{i}.png"
+                fig.write_image(img_path)
+                pdf.image(img_path, x=10, y=None, w=180)
+                os.remove(img_path)  # Clean up temporary file
+                pdf.ln(100)  # Adjust spacing for next image
+    
+    # Adding Note
+    pdf.set_font("Arial", size=10)
     pdf.multi_cell(0, 10, "This PDF contains a snapshot of the Kerala Survey Dashboard. "
-                         "Due to limitations in capturing dynamic Streamlit content, "
-                         "this is a basic representation. For full details, please view the dashboard interactively.")
+                         "Due to limitations in capturing dynamic Streamlit content, some interactive elements may not be fully represented. "
+                         "For full details, please view the dashboard interactively.")
     
     # Save PDF to a BytesIO buffer
     pdf_output = BytesIO()
-    pdf.output(dest='S').encode('latin1')  # Output to string (BytesIO-compatible)
-    pdf_str = pdf.output(dest='S').encode('latin1')  # Get the PDF as a string
-    pdf_output.write(pdf_str)  # Write to BytesIO
+    pdf_str = pdf.output(dest='S').encode('latin1')
+    pdf_output.write(pdf_str)
     pdf_output.seek(0)
     return pdf_output
 
@@ -422,7 +445,7 @@ def comparative_dashboard(gc):
         st.download_button("Download CSV", csv, f"{selected_question}_{selected_norm}_comparative.csv", "text/csv")
         
         # PDF Download Button for Comparative Dashboard
-        pdf_buffer = generate_pdf_report()
+        pdf_buffer = generate_pdf_report(df=df_final, figs=[fig, margin_fig] if fig and margin_fig else [fig])
         st.download_button(
             label="Download Dashboard as PDF",
             data=pdf_buffer,
@@ -508,7 +531,7 @@ def Stratified_dashboard(gc):
         fig = plot_horizontal_bar_plotly(df, key="stratified_horizontal_bar")
         
         # PDF Download Button for State Summary
-        pdf_buffer = generate_pdf_report()
+        pdf_buffer = generate_pdf_report(df=df, figs=[fig])
         st.download_button(
             label="Download Dashboard as PDF",
             data=pdf_buffer,
@@ -550,7 +573,7 @@ def Stratified_dashboard(gc):
                 fig = plot_horizontal_bar_plotly(filtered_df, key=f"{block_prefix}_{selected_block_label}_geo_horizontal_bar")
                 
                 # PDF Download Button for Geo Sections
-                pdf_buffer = generate_pdf_report()
+                pdf_buffer = generate_pdf_report(df=filtered_df, figs=[fig])
                 st.download_button(
                     label="Download Dashboard as PDF",
                     data=pdf_buffer,
@@ -571,7 +594,7 @@ def Stratified_dashboard(gc):
                     fig = plot_horizontal_bar_plotly(df, key=f"cut_{block['label']}_horizontal_bar")
                     
                     # PDF Download Button for Other Cuts
-                    pdf_buffer = generate_pdf_report()
+                    pdf_buffer = generate_pdf_report(df=df, figs=[fig])
                     st.download_button(
                         label="Download Dashboard as PDF",
                         data=pdf_buffer,
